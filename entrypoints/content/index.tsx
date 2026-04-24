@@ -1,31 +1,34 @@
-import './style.css' // Import CSS, automatically handled during bundling
 import { createRoot } from 'react-dom/client'
+import { createIntegratedUi } from 'wxt/utils/content-script-ui/integrated'
 import Screenshot from './Screenshot'
-import Clip from './Clip'
+import Clipper from './Clipper'
 import { Provider } from "@/components/ui/provider"
 
 export default defineContentScript({
   matches: ['https://www.youtube.com/*'],
-  cssInjectionMode: 'ui', // This configuration tells WXT to dynamically inject CSS into the page
+  // Use manifest injection with integrated UI so imported CSS is applied to the page.
+  // `cssInjectionMode: 'ui'` is intended for UI-scoped loading flows (eg shadow-root helpers).
+  cssInjectionMode: 'manifest',
   async main(ctx) {
-    // Here we use Shadow Root mode to inject UI, which properly prevents our Tailwind CSS from "polluting" the webpage itself
-    const ui = await createShadowRootUi(ctx, {
-      name: 'inject-ui-app',
+
+    // Use integrated UI mode to allow portals (Chakra-UI popovers, shadcn dialogs) to work properly
+    const ui = createIntegratedUi(ctx, {
       position: 'inline',
       anchor: '#movie_player .ytp-right-controls-left', // The container element to inject into
-      append(anchor, ui) {
-        anchor.insertBefore(ui, anchor.firstChild) // Add to the leftmost position
+      append(anchor, wrapper) {
+        anchor.insertBefore(wrapper, anchor.firstChild) // Add to the leftmost position
       },
-      onMount: (container) => {
+      onMount: (wrapper) => {
+        wrapper.className = 'clip-dl-ui-wrapper';
         const app = document.createElement('div');
-        container.append(app);
+        app.className = 'clip-dl-ui-root';
+        wrapper.append(app);
         const root = createRoot(app)
+
         root.render(
           <Provider>
-            <div>
-              <Screenshot />
-              <Clip />
-            </div>
+            <Screenshot />
+            <Clipper />
           </Provider>
         )
 

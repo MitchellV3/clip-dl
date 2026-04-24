@@ -1,7 +1,6 @@
-@import 'tailwindcss';
+@import 'tailwindcss/theme';
+@import 'tailwindcss/utilities';
 @import 'tw-animate-css';
-
-@custom-variant dark (&:is(.dark *));
 
 :root {
     --background: oklch(1 0 0);
@@ -114,23 +113,25 @@
 }
 
 @layer base {
-    * {
+
+    .clip-dl-ui-root,
+    .clip-dl-ui-root * {
         @apply border-border outline-ring/50;
-    }
-
-    html {
-        height: 40px;
-    }
-
-    body {
-        height: 100%;
-        display: flex;
-        align-items: center;
     }
 }
 
-PopoverContent {
-    z-index: 9999;
-    background-color: aliceblue;
-    color: #000;
+.clip-dl-ui-wrapper {
+    height: 100% !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+}
+
+.clip-dl-ui-root {
+    height: 100% !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: row;
 }

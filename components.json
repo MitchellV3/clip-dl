@@ -5,7 +5,7 @@
     "tsx": true,
     "tailwind": {
         "config": "",
-        "css": "entrypoints/content/styles.css",
+        "css": "entrypoints/content/style.css",
         "baseColor": "neutral",
         "cssVariables": true,
         "prefix": ""
