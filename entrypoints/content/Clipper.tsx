@@ -1,9 +1,7 @@
 import { useState, useCallback, useEffect } from 'react'
-import { Box, Popover, Button, Text, Flex, Bleed, Select, NativeSelect } from '@chakra-ui/react'
+import { Box, Popover, Button, Text, Bleed, NativeSelect } from '@chakra-ui/react'
 import './style.css'
-import { HiCheck, HiX } from 'react-icons/hi';
-import { Switch } from "@/components/ui/switch"
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
+
 // Shared state for window.clip_* interop
 const clipState = {
   audioOnly: false,
@@ -27,14 +25,12 @@ const clipDurations = [
 function AudioOnlyToggle() {
   const [active, setActive] = useState(clipState.audioOnly)
 
-  const handleClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation()
-    const newVal = !active
-    setActive(newVal)
-    if (window.clip_setAudioOnly) {
-      try { window.clip_setAudioOnly(newVal) } catch (err) { console.warn('clip_setAudioOnly failed', err) }
-    }
-  }, [active])
+  function handleClick() {
+    console.log('Toggling audio-only mode. Current state:', active)
+    const newValue = !active
+    setActive(newValue)
+    clipState.audioOnly = newValue
+  }
 
   return (
     <Box
@@ -172,16 +168,15 @@ function QualitySelector({ formats, loading, error }: { formats: { label: string
 
 // Duration buttons sub-component
 function DurationButtons() {
-  const handleClick = useCallback((e: React.MouseEvent, seconds: number) => {
+  function handleClick(e: React.MouseEvent, seconds: number) {
     e.stopPropagation()
-    if (window.clip_handleCustomClipDownload) {
-      if (seconds === -1) {
-        window.clip_handleCustomClipDownload(-1, 0)
-      } else {
-        window.clip_handleCustomClipDownload(seconds, null)
-      }
+    console.log('Duration button clicked')
+    if (window.clip_handleClipOptionClick) {
+      window.clip_handleClipOptionClick(e.nativeEvent)
+      window.clip_handleCustomClipDownload(seconds, null)
     }
-  }, [])
+    console.log('Handled clip option click for duration:', seconds)
+  }
 
   return (
     <Box
@@ -235,47 +230,50 @@ function TimeSelection() {
     updateStatus()
   }, [updateStatus])
 
-  const handleSetStart = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation()
+  function handleSetStart() {
+    console.log('Setting start time for clip')
     const videoElement = document.querySelector('video.html5-main-video, video.video-player__video, video[playsinline]') as HTMLVideoElement | null
     if (videoElement) {
       if (window.clip_setStartTime) window.clip_setStartTime(videoElement.currentTime)
       if (window.clip_showTimelinePreview) window.clip_showTimelinePreview(videoElement.currentTime, videoElement.currentTime)
       updateStatus()
     }
-  }, [updateStatus])
+    console.log('Start time set. Current time selection status:', status)
+    console.log('Current clipState:', {
+      startTime: clipState.startTime,
+      endTime: clipState.endTime,
+      audioOnly: clipState.audioOnly,
+    })
+  }
 
-  const handleSetEnd = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation()
+  function handleSetEnd() {
+    console.log('Setting end time for clip')
     const videoElement = document.querySelector('video.html5-main-video, video.video-player__video, video[playsinline]') as HTMLVideoElement | null
     if (videoElement) {
       if (window.clip_setEndTime) window.clip_setEndTime(videoElement.currentTime)
-      if (window.clip_showTimelinePreview && window.clip_getStartTime) {
-        window.clip_showTimelinePreview(window.clip_getStartTime() || videoElement.currentTime, videoElement.currentTime)
-      }
+      if (window.clip_showTimelinePreview) window.clip_showTimelinePreview(videoElement.currentTime, videoElement.currentTime)
       updateStatus()
     }
-  }, [updateStatus])
+    console.log('End time set. Current time selection status:', status)
+    console.log('Current clipState:', {
+      startTime: clipState.startTime,
+      endTime: clipState.endTime,
+      audioOnly: clipState.audioOnly,
+    })
+  }
 
-  const handleCancel = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (window.clip_clearTimeSelection) window.clip_clearTimeSelection()
-    updateStatus()
-  }, [updateStatus])
-
-  const handleDownload = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (window.clip_getTimeSelection) {
-      const sel = window.clip_getTimeSelection()
-      if (sel && sel.timeSelectionStatus === 'both_set') {
-        const clipDuration = (sel.endTime || 0) - (sel.startTime || 0)
-        if (window.clip_handleCustomClipDownload) window.clip_handleCustomClipDownload(clipDuration, sel.startTime)
-        if (window.clip_restorePlayerControlsVisibility) window.clip_restorePlayerControlsVisibility()
-        if (window.clip_clearTimeSelection) window.clip_clearTimeSelection()
-        updateStatus()
-      }
+  function handleDownload() {
+    console.log('Download clip with settings:', {
+      audioOnly: clipState.audioOnly,
+      startTime: clipState.startTime,
+      endTime: clipState.endTime,
+    })
+    if (window.clip_handleCustomClipDownload) {
+      const start = clipState.startTime || 0
+      const duration = (clipState.endTime && clipState.startTime) ? (clipState.endTime - clipState.startTime) : -1
+      window.clip_handleCustomClipDownload(duration, start)
     }
-  }, [updateStatus])
+  }
 
   const showCancel = status === 'start_set' || status === 'end_set' || status === 'both_set'
   const showDownload = status === 'both_set'
@@ -402,19 +400,16 @@ function TimeSelection() {
 
 // Toggle button SVG icon
 const ClipIcon = () => (
-  <Box w={"full"} h={"full"} filter="drop-shadow(0 0 1px rgba(0, 0, 0, .8))">
-    <svg filter="drop-shadow(0 0 1px rgba(0, 0, 0, .8))" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white">
-      <path d="M0 0h24v24H0z" fill="none" />
-      <path d="M23 22a2 2 0 0 1-2-2V4a4 4 0 0 0-4-4H6a1 1 0 0 0 0 2a2 2 0 0 1 2 2v6.91a.23.23 0 0 0 .13.21l2.5 1.48a.25.25 0 0 0 .25 0a.25.25 0 0 0 .12-.22V9.5a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 .5.5v5a.5.5 0 0 1-.5.5h-1.93a.26.26 0 0 0-.24.18a.27.27 0 0 0 .11.29l1.33.78c.22.13 1.22 1 1.22 1.25V21a.5.5 0 0 1-.5.5H13a2 2 0 0 1-2-2v-.72a.22.22 0 0 0-.12-.21l-2.5-1.48a.25.25 0 0 0-.25 0a.26.26 0 0 0-.13.21V20a4 4 0 0 0 4 4h11a1 1 0 0 0 0-2M17.49 7h-6a.5.5 0 0 1-.5-.5V3a.5.5 0 0 1 .5-.5H16a2 2 0 0 1 2 2v2a.5.5 0 0 1-.51.5" />
-      <path d="M2.46 11.84L15 19.26a1 1 0 0 0 1-1.72l-10.14-6a.26.26 0 0 1-.13-.19a.3.3 0 0 1 .09-.22a3.3 3.3 0 0 0 .74-.92A3.5 3.5 0 1 0 0 8.5a3.5 3.5 0 0 0 .45 1.73a3.52 3.52 0 0 0 2.01 1.61M3.51 7A1.5 1.5 0 0 1 5 8.5a1.4 1.4 0 0 1-.17.68A1.5 1.5 0 0 1 2 8.57V8.5A1.5 1.5 0 0 1 3.51 7m0 7A3.5 3.5 0 1 0 7 17.5A3.5 3.5 0 0 0 3.51 14m0 5A1.5 1.5 0 1 1 5 17.5A1.5 1.5 0 0 1 3.51 19" />
-    </svg>
-    <svg className={"w-10! h-10! bg-transparent"} filter="drop-shadow(0 0 1px rgba(0, 0, 0, .8))" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#ffffff">
-      <g fill="none" stroke="#ffffff" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5">
-        <path d="M.763 8.25a2.25 2.25 0 1 0 4.5 0a2.25 2.25 0 0 0-4.5 0m0 8.196a2.25 2.25 0 1 0 4.499 0a2.25 2.25 0 0 0-4.499 0" />
-        <path d="m2.34 10.397l7.391 4.381l4.201 2.489M2.34 14.3l4.317-2.559m3.08.259V2.25a1.5 1.5 0 0 1 1.5-1.5h12m0 22.5h-12a1.5 1.5 0 0 1-1.5-1.5V18m4.5-8.25v-9m0 22.5v-3m-4.5-15h4.5m9 9V.75m0 22.5v-9m-13.5-4.5h13.5m-7.5 4.5h7.5" />
-      </g>
-    </svg>
-  </Box>
+  <svg filter="drop-shadow(0 0 1px rgba(0, 0, 0, .8))" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#ffffff"
+    style={{
+      height: "60%",
+      width: "auto"
+    }}>
+    <g fill="none" stroke="#ffffff" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5">
+      <path d="M.763 8.25a2.25 2.25 0 1 0 4.5 0a2.25 2.25 0 0 0-4.5 0m0 8.196a2.25 2.25 0 1 0 4.499 0a2.25 2.25 0 0 0-4.499 0" />
+      <path d="m2.34 10.397l7.391 4.381l4.201 2.489M2.34 14.3l4.317-2.559m3.08.259V2.25a1.5 1.5 0 0 1 1.5-1.5h12m0 22.5h-12a1.5 1.5 0 0 1-1.5-1.5V18m4.5-8.25v-9m0 22.5v-3m-4.5-15h4.5m9 9V.75m0 22.5v-9m-13.5-4.5h13.5m-7.5 4.5h7.5" />
+    </g>
+  </svg>
 )
 
 export default function Clipper() {
@@ -532,16 +527,7 @@ export default function Clipper() {
             justifyContent={"center"}
             padding={"0"}
           >
-            <svg filter="drop-shadow(0 0 1px rgba(0, 0, 0, .8))" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#ffffff"
-              style={{
-                height: "60%",
-                width: "auto"
-              }}>
-              <g fill="none" stroke="#ffffff" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5">
-                <path d="M.763 8.25a2.25 2.25 0 1 0 4.5 0a2.25 2.25 0 0 0-4.5 0m0 8.196a2.25 2.25 0 1 0 4.499 0a2.25 2.25 0 0 0-4.499 0" />
-                <path d="m2.34 10.397l7.391 4.381l4.201 2.489M2.34 14.3l4.317-2.559m3.08.259V2.25a1.5 1.5 0 0 1 1.5-1.5h12m0 22.5h-12a1.5 1.5 0 0 1-1.5-1.5V18m4.5-8.25v-9m0 22.5v-3m-4.5-15h4.5m9 9V.75m0 22.5v-9m-13.5-4.5h13.5m-7.5 4.5h7.5" />
-              </g>
-            </svg>
+            <ClipIcon />
           </Bleed>
         </Button>
       </Popover.Trigger>

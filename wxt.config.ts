@@ -7,7 +7,7 @@ export default defineConfig({
   manifest: {
     name: 'clip-dl',
     description: 'description',
-    permissions: ['nativeMessaging'],
+    permissions: ['nativeMessaging', "storage", "downloads"],
 
   },
   vite: () => ({
