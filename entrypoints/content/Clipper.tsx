@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
 import { Box, Popover, Button, Text, Bleed, NativeSelect } from '@chakra-ui/react'
+import { toaster } from '@/components/ui/toaster'
 import './style.css'
 
 // Shared state for window.clip_* interop
@@ -170,6 +171,8 @@ function QualitySelector({ formats, loading, error }: { formats: { label: string
 function DurationButtons() {
   function handleClick(e: React.MouseEvent, seconds: number) {
     e.stopPropagation()
+    const label = clipDurations.find(d => d.seconds === seconds)?.label ?? `${seconds}s`
+    toaster.create({ title: `Duration: ${label}`, description: seconds === -1 ? 'Full video' : `Clipping to ${label}`, duration: 30000 })
     console.log('Duration button clicked')
     if (window.clip_handleClipOptionClick) {
       window.clip_handleClipOptionClick(e.nativeEvent)
