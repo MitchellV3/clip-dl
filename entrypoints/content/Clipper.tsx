@@ -572,7 +572,7 @@ export default function Clipper() {
     toaster.loading({
       id: loadingToastId,
       title: 'Downloading clip',
-      description: `Saving the last ${label.toLowerCase()} ending at ${formatSecondsForYtDlp(Math.round(endTimeSeconds))}s.`,
+      description: `Saving the last ${label.toLowerCase()} ending at ${formatSecondsForYtDlp(endTimeSeconds)}s. A progress window was opened on the desktop.`,
       closable: true,
     })
 
