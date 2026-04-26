@@ -9,7 +9,9 @@ const { globalCss: _, ...restConfig } = defaultConfig
 // 2. Disable preflight (the reset) and scope variables to the Shadow Host
 const customConfig = defineConfig({
   preflight: false,
-  cssVarsRoot: ".clip-dl-ui-wrapper",
+  // We mount two separate integrated UIs (controls + toast),
+  // so emit Chakra vars for both wrapper roots.
+  cssVarsRoot: ".clip-dl-ui-wrapper, .clip-dl-toast-wrapper",
 })
 
 // 3. Create the custom system
