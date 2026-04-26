@@ -6,6 +6,7 @@ import {
   Spinner,
   Stack,
   Toast,
+  VStack,
   createToaster,
 } from "@chakra-ui/react"
 
@@ -17,24 +18,81 @@ export const toaster = createToaster({
 export const Toaster = () => {
   return (
     <Portal disabled>
-      <ChakraToaster toaster={toaster} insetInline={{ mdDown: "4" }}>
+      <ChakraToaster toaster={toaster} insetInline={{ mdDown: "4" }} gap={4}>
         {(toast) => (
-          <Toast.Root width={{ md: "lg" }}>
+          <Toast.Root
+            width={"250px"}
+            backgroundColor={toast.title === "Success" ? "green.800" : "blackAlpha.800"}
+            color={"white"}
+            borderRadius={"md"}
+            padding={"10px 15px"}
+            display={"flex"}
+            justifyContent={"space-around"}
+            alignItems={"center"}
+            gap={"3"}
+            boxShadow={"0 4px 8px rgba(0,0,0,0.2)"}
+            fontSize={"xl"}
+            transition={"all 0.5s ease-in-out"}
+            border={"1px solid rgba(255, 255, 255, 0.2)"}
+            _hover={{ borderColor: "white" }}
+          >
             {toast.type === "loading" ? (
-              <Spinner size="sm" color="blue.solid" />
+              <Spinner
+                size="xl"
+                color="blue.solid" />
             ) : (
               <Toast.Indicator />
             )}
-            <Stack gap="1" flex="1" maxWidth="100%">
-              {toast.title && <Toast.Title>{toast.title}</Toast.Title>}
-              {toast.description && (
-                <Toast.Description>{toast.description}</Toast.Description>
-              )}
-            </Stack>
+            <VStack
+              gap="4"
+              //flex="1"
+              maxWidth="100%" alignItems={"flex-start"}
+            >
+              {toast.title &&
+                <Toast.Title
+                  fontSize={"2xl"}
+                >
+                  {toast.title}
+                </Toast.Title>}
+              {toast.description &&
+                (
+                  <Toast.Description
+                    fontSize={"xl"}
+                  >
+                    {toast.description}
+                  </Toast.Description>
+                )}
+            </VStack>
             {toast.action && (
-              <Toast.ActionTrigger>{toast.action.label}</Toast.ActionTrigger>
+              <Toast.ActionTrigger
+                display={"flex"}
+                fontSize={"xl"}
+                background={"transparent"}
+                padding={"12px"}
+                borderRadius={"md"}
+                alignItems={"center"}
+                justifyContent={"center"}
+                border={"1px solid rgba(255, 255, 255, 0.2)"}
+                _hover={{ background: "whiteAlpha.200", borderColor: "white" }}
+                //onClick={toast.action.onClick}
+                transition={"background 0.2s ease-in-out, border-color 0.2s ease-in-out"}
+
+              >
+                {toast.action.label}
+              </Toast.ActionTrigger>
             )}
-            {toast.closable && <Toast.CloseTrigger />}
+            {toast.closable &&
+              <Toast.CloseTrigger
+                fontSize={"xl"}
+                background={"transparent"}
+                padding={"4px"}
+                borderRadius={"md"}
+                alignItems={"center"}
+                justifyContent={"center"}
+                border={"1px solid rgba(255, 255, 255, 0.2)"}
+                _hover={{ background: "whiteAlpha.200", borderColor: "white" }}
+                transition={"background 0.2s ease-in-out, border-color 0.2s ease-in-out"}
+              />}
           </Toast.Root>
         )}
       </ChakraToaster>

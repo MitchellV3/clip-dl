@@ -1,7 +1,22 @@
 import { useState, useCallback, useEffect } from 'react'
 import { Box, Popover, Button, Text, Bleed, NativeSelect } from '@chakra-ui/react'
+import { createProxyService } from '@webext-core/proxy-service'
 import { toaster } from '@/components/ui/toaster'
+import { CLICKS_REPO_KEY } from '@/lib/services/proxy-service-keys'
+import { DURATION_CLICK_LOGGER_KEY } from '@/lib/services/proxy-service-keys'
 import './style.css'
+
+const clicksRepo = createProxyService(CLICKS_REPO_KEY)
+const durationClickLogger = createProxyService(DURATION_CLICK_LOGGER_KEY)
+const PAGE_DEBUG_EVENT = '__clip_dl_native_debug__'
+
+function emitPageDebugLog(payload: unknown) {
+  window.postMessage({
+    source: 'clip-dl',
+    type: PAGE_DEBUG_EVENT,
+    payload,
+  }, '*')
+}
 
 // Shared state for window.clip_* interop
 const clipState = {
@@ -169,10 +184,31 @@ function QualitySelector({ formats, loading, error }: { formats: { label: string
 
 // Duration buttons sub-component
 function DurationButtons() {
-  function handleClick(e: React.MouseEvent, seconds: number) {
+  async function handleClick(e: React.MouseEvent, seconds: number) {
     e.stopPropagation()
+
     const label = clipDurations.find(d => d.seconds === seconds)?.label ?? `${seconds}s`
-    toaster.create({ title: `Duration: ${label}`, description: seconds === -1 ? 'Full video' : `Clipping to ${label}`, duration: 30000 })
+    emitPageDebugLog({ stage: 'duration-clicked', durationSeconds: seconds, label })
+
+    try {
+      const clickCount = await clicksRepo.incrementClick()
+      console.log(`[clip-dl] Duration button clicks: ${clickCount}`)
+      emitPageDebugLog({ stage: 'click-count-updated', clickCount })
+
+      const nativeResponse = await durationClickLogger.logDurationClick({
+        clickCount,
+        durationSeconds: seconds,
+        label,
+      })
+
+      console.log('[clip-dl] Python native host response:', nativeResponse)
+      emitPageDebugLog({ stage: 'native-host-response', nativeResponse })
+    } catch (error) {
+      console.warn('Failed to update duration click counter or notify native host:', error)
+      emitPageDebugLog({ stage: 'native-host-error', error: String(error) })
+    }
+
+    toaster.create({ title: `Success`, description: seconds === -1 ? 'Full video' : `Clipping to ${label}`, duration: 300000, closable: true, action: { label: 'Show File', onClick: () => console.log("Show file path clicked") } })
     console.log('Duration button clicked')
     if (window.clip_handleClipOptionClick) {
       window.clip_handleClipOptionClick(e.nativeEvent)
@@ -276,6 +312,11 @@ function TimeSelection() {
       const duration = (clipState.endTime && clipState.startTime) ? (clipState.endTime - clipState.startTime) : -1
       window.clip_handleCustomClipDownload(duration, start)
     }
+  }
+
+  function handleCancel() {
+    if (window.clip_clearTimeSelection) window.clip_clearTimeSelection()
+    setStatus('none')
   }
 
   const showCancel = status === 'start_set' || status === 'end_set' || status === 'both_set'
@@ -421,6 +462,31 @@ export default function Clipper() {
   const [loadingFormats, setLoadingFormats] = useState(false)
   const [formatError, setFormatError] = useState<string | null>(null)
 
+  useEffect(() => {
+    const scriptId = 'clip-dl-page-console-bridge'
+    if (document.getElementById(scriptId)) return
+
+    const bridgeScript = document.createElement('script')
+    bridgeScript.id = scriptId
+    bridgeScript.textContent = `
+      (() => {
+        const EVENT_NAME = '${PAGE_DEBUG_EVENT}';
+        if (window.__clipDlPageConsoleBridgeInstalled) return;
+        window.__clipDlPageConsoleBridgeInstalled = true;
+        window.addEventListener('message', (event) => {
+          const data = event.data;
+          if (!data || data.source !== 'clip-dl' || data.type !== EVENT_NAME) return;
+          console.log('[clip-dl][page-console-bridge]', data.payload);
+        });
+        console.log('[clip-dl][page-console-bridge] ready');
+      })();
+    `
+
+    document.documentElement.appendChild(bridgeScript)
+    bridgeScript.remove()
+    emitPageDebugLog({ stage: 'content-script-mounted' })
+  }, [])
+
   const handleToggle = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
 
@@ -453,7 +519,7 @@ export default function Clipper() {
             }
           })
           .catch((error: any) => {
-            console.warn('clipper: Failed to fetch video formats:', error)
+            console.warn('Clipper: Failed to fetch video formats:', error)
             const message = error && error.message ? error.message : 'Failed to load formats'
             setFormatError(message)
             if (window.clip_updateQualityOptionsError) window.clip_updateQualityOptionsError(message)
