@@ -2,13 +2,14 @@ import { useState, useCallback, useEffect } from 'react'
 import { Box, Popover, Button, Text, Bleed, NativeSelect } from '@chakra-ui/react'
 import { createProxyService } from '@webext-core/proxy-service'
 import { toaster } from '@/components/ui/toaster'
-import { CLICKS_REPO_KEY } from '@/lib/services/proxy-service-keys'
-import { DURATION_CLICK_LOGGER_KEY } from '@/lib/services/proxy-service-keys'
+import { CLIP_DOWNLOADER_KEY } from '@/lib/services/proxy-service-keys'
+import type { ClipDownloadRequest, ClipDownloadResult } from '@/lib/repos/native-clip-downloader-repo'
 import './style.css'
 
-const clicksRepo = createProxyService(CLICKS_REPO_KEY)
-const durationClickLogger = createProxyService(DURATION_CLICK_LOGGER_KEY)
+const clipDownloader = createProxyService(CLIP_DOWNLOADER_KEY)
 const PAGE_DEBUG_EVENT = '__clip_dl_native_debug__'
+const FORMAT_PLACEHOLDER_MESSAGE = 'Format selection is not implemented in this first host-backed version.'
+const V1_NOT_IMPLEMENTED_MESSAGE = 'This control is still visible for layout work, but only the preset duration buttons are implemented right now.'
 
 function emitPageDebugLog(payload: unknown) {
   window.postMessage({
@@ -18,7 +19,26 @@ function emitPageDebugLog(payload: unknown) {
   }, '*')
 }
 
-// Shared state for window.clip_* interop
+function getActiveVideoElement() {
+  return document.querySelector('video.html5-main-video, video.video-player__video, video[playsinline]') as HTMLVideoElement | null
+}
+
+function showNotImplementedToast(controlName: string) {
+  toaster.create({
+    title: 'Not implemented yet',
+    description: `${controlName}: ${V1_NOT_IMPLEMENTED_MESSAGE}`,
+    duration: 5000,
+    closable: true,
+  })
+}
+
+function formatSecondsForYtDlp(seconds: number) {
+  return seconds.toFixed(3)
+}
+
+// Shared state for window.clip_* interop. The current v1 only wires duration
+// buttons to the native host, but we keep these globals documented here because
+// other content-side code already expects them to exist.
 const clipState = {
   audioOnly: false,
   startTime: null as number | null,
@@ -34,7 +54,7 @@ const clipDurations = [
   { label: '3 minutes', seconds: 180 },
   { label: '5 minutes', seconds: 300 },
   { label: '10 minutes', seconds: 600 },
-  { label: 'Full Video', seconds: -1 }
+  { label: 'Full Video', seconds: -1 },
 ]
 
 // Audio-only toggle sub-component
@@ -55,10 +75,10 @@ function AudioOnlyToggle() {
       padding={'4px 2px 4px'}
     >
       <Button
-        onClick={handleClick}
-        display={"flex"}
-        alignItems={"center"}
-        justifyContent={"space-between"}
+        onClick={() => showNotImplementedToast('Audio Only')}
+        display={'flex'}
+        alignItems={'center'}
+        justifyContent={'space-between'}
         width={'100%'}
         backgroundColor={'transparent'}
         color={'#e2e2e2'}
@@ -94,7 +114,6 @@ function AudioOnlyToggle() {
             left={active ? '15px' : '1px'}
             transition={'all 0.2s ease'}
             boxShadow={'xl'}
-            transform={active ? 'translateX(0)' : 'translateX(0)'}
           />
         </Box>
       </Button>
@@ -182,39 +201,20 @@ function QualitySelector({ formats, loading, error }: { formats: { label: string
   )
 }
 
-// Duration buttons sub-component
-function DurationButtons() {
+function DurationButtons({
+  isDownloading,
+  onDownload,
+}: {
+  isDownloading: boolean
+  onDownload: (seconds: number, label: string) => Promise<void>
+}) {
   async function handleClick(e: React.MouseEvent, seconds: number) {
     e.stopPropagation()
 
-    const label = clipDurations.find(d => d.seconds === seconds)?.label ?? `${seconds}s`
+    const label = clipDurations.find((duration) => duration.seconds === seconds)?.label ?? `${seconds}s`
     emitPageDebugLog({ stage: 'duration-clicked', durationSeconds: seconds, label })
 
-    try {
-      const clickCount = await clicksRepo.incrementClick()
-      console.log(`[clip-dl] Duration button clicks: ${clickCount}`)
-      emitPageDebugLog({ stage: 'click-count-updated', clickCount })
-
-      const nativeResponse = await durationClickLogger.logDurationClick({
-        clickCount,
-        durationSeconds: seconds,
-        label,
-      })
-
-      console.log('[clip-dl] Python native host response:', nativeResponse)
-      emitPageDebugLog({ stage: 'native-host-response', nativeResponse })
-    } catch (error) {
-      console.warn('Failed to update duration click counter or notify native host:', error)
-      emitPageDebugLog({ stage: 'native-host-error', error: String(error) })
-    }
-
-    toaster.create({ title: `Success`, description: seconds === -1 ? 'Full video' : `Clipping to ${label}`, duration: 300000, closable: true, action: { label: 'Show File', onClick: () => console.log("Show file path clicked") } })
-    console.log('Duration button clicked')
-    if (window.clip_handleClipOptionClick) {
-      window.clip_handleClipOptionClick(e.nativeEvent)
-      window.clip_handleCustomClipDownload(seconds, null)
-    }
-    console.log('Handled clip option click for duration:', seconds)
+    await onDownload(seconds, label)
   }
 
   return (
@@ -229,20 +229,25 @@ function DurationButtons() {
         return (
           <Button
             key={duration.seconds}
-            onClick={(e) => handleClick(e, duration.seconds)}
+            onClick={(event) => void handleClick(event, duration.seconds)}
+            disabled={isDownloading}
             backgroundColor={isFullVideo ? 'rgba(255, 255, 255, 0.05)' : 'transparent'}
             color={isFullVideo ? '#ffffff' : '#e2e2e2'}
             border={isFullVideo ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid transparent'}
             padding='16px 12px'
             margin={'1px 0'}
             borderRadius={'4px'}
-            cursor={'pointer'}
+            cursor={isDownloading ? 'progress' : 'pointer'}
             fontSize={'12px'}
             textAlign={'center'}
             transition={'all 0.2s ease'}
             fontWeight={isFullVideo ? '600' : '400'}
             gridColumn={isFullVideo ? '1 / -1' : 'auto'}
-            _hover={{ backgroundColor: isFullVideo ? 'rgba(255, 255, 255, 0.1)' : 'rgba(74, 222, 128, 0.1)', borderColor: isFullVideo ? 'rgba(255, 255, 255, 0.3)' : 'rgba(74, 222, 128, 0.3)' }}
+            opacity={isDownloading ? 0.6 : 1}
+            _hover={{
+              backgroundColor: isFullVideo ? 'rgba(255, 255, 255, 0.1)' : 'rgba(74, 222, 128, 0.1)',
+              borderColor: isFullVideo ? 'rgba(255, 255, 255, 0.3)' : 'rgba(74, 222, 128, 0.3)',
+            }}
           >
             {duration.label}
           </Button>
@@ -258,9 +263,9 @@ function TimeSelection() {
 
   const updateStatus = useCallback(() => {
     if (window.clip_getTimeSelection) {
-      const sel = window.clip_getTimeSelection()
-      if (sel) {
-        setStatus(sel.timeSelectionStatus)
+      const selection = window.clip_getTimeSelection()
+      if (selection) {
+        setStatus(selection.timeSelectionStatus)
       }
     }
   }, [])
@@ -318,7 +323,10 @@ function TimeSelection() {
     if (window.clip_clearTimeSelection) window.clip_clearTimeSelection()
     setStatus('none')
   }
-
+  function handleUnavailableControl(controlName: string) {
+    setStatus('none')
+    showNotImplementedToast(controlName)
+  }
   const showCancel = status === 'start_set' || status === 'end_set' || status === 'both_set'
   const showDownload = status === 'both_set'
 
@@ -345,7 +353,7 @@ function TimeSelection() {
         overflow={"hidden"}
       >
         <Button
-          onClick={handleSetStart}
+          onClick={() => handleUnavailableControl('Set Start Time')}
           backgroundColor={'rgba(74, 222, 128, 0.2)'}
           color={'#4ade80'}
           border={"1px solid rgba(74, 222, 128, 0.3)"}
@@ -369,7 +377,7 @@ function TimeSelection() {
           </Text>
         </Button>
         <Button
-          onClick={handleSetEnd}
+          onClick={() => handleUnavailableControl('Set End Time')}
           backgroundColor={'rgba(74, 222, 128, 0.2)'}
           color={'#4ade80'}
           border={"1px solid rgba(74, 222, 128, 0.3)"}
@@ -394,7 +402,7 @@ function TimeSelection() {
         </Button>
         {showCancel && (
           <Button
-            onClick={handleCancel}
+            onClick={() => handleUnavailableControl('Cancel Selection')}
             backgroundColor={'rgba(239, 68, 68, 0.2)'}
             color={'#ef4444'}
             border={"1px solid rgba(239, 68, 68, 0.3)"}
@@ -415,7 +423,7 @@ function TimeSelection() {
         )}
         {showDownload && (
           <Button
-            onClick={handleDownload}
+            onClick={() => handleUnavailableControl('Download Clip')}
             backgroundColor={'#4ade80'}
             color={'#1a1a1a'}
             border={"none"}
@@ -446,8 +454,8 @@ function TimeSelection() {
 const ClipIcon = () => (
   <svg filter="drop-shadow(0 0 1px rgba(0, 0, 0, .8))" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#ffffff"
     style={{
-      height: "60%",
-      width: "auto"
+      height: '60%',
+      width: 'auto',
     }}>
     <g fill="none" stroke="#ffffff" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5">
       <path d="M.763 8.25a2.25 2.25 0 1 0 4.5 0a2.25 2.25 0 0 0-4.5 0m0 8.196a2.25 2.25 0 1 0 4.499 0a2.25 2.25 0 0 0-4.499 0" />
@@ -461,6 +469,7 @@ export default function Clipper() {
   const [qualityFormats, setQualityFormats] = useState<{ label: string; value: string }[]>([])
   const [loadingFormats, setLoadingFormats] = useState(false)
   const [formatError, setFormatError] = useState<string | null>(null)
+  const [isDownloading, setIsDownloading] = useState(false)
 
   useEffect(() => {
     const scriptId = 'clip-dl-page-console-bridge'
@@ -487,96 +496,177 @@ export default function Clipper() {
     emitPageDebugLog({ stage: 'content-script-mounted' })
   }, [])
 
-  const handleToggle = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation()
+  useEffect(() => {
+    if (isOpen) {
+      if (window.clip_forceShowPlayerControls) window.clip_forceShowPlayerControls()
+      setLoadingFormats(false)
+      setQualityFormats([])
+      setFormatError(FORMAT_PLACEHOLDER_MESSAGE)
+    } else {
+      if (window.clip_restorePlayerControlsVisibility) window.clip_restorePlayerControlsVisibility()
+    }
+  }, [isOpen])
 
-    // Check context validity before opening
+  const handleToggle = useCallback((event: React.MouseEvent) => {
+    event.stopPropagation()
+
     if (window.clip_isExtensionContextValid && !window.clip_isExtensionContextValid()) {
       if (window.clip_handleInvalidContext) window.clip_handleInvalidContext()
       return
     }
 
-    const newOpen = !isOpen
-    setIsOpen(newOpen)
+    setIsOpen((previous) => !previous)
+  }, [])
 
-    if (newOpen) {
-      // Menu is opening
-      if (window.clip_forceShowPlayerControls) window.clip_forceShowPlayerControls()
+  const handleDurationDownload = useCallback(async (seconds: number, label: string) => {
+    if (isDownloading) {
+      toaster.create({
+        title: 'Download already running',
+        description: 'Wait for the active clip download to finish before starting another one.',
+        duration: 4000,
+        closable: true,
 
-      // Fetch video formats
-      setLoadingFormats(true)
-      setFormatError(null)
-      if (window.clip_fetchVideoFormats && window.clip_updateQualityOptions) {
-        const videoUrl = window.location.href
-        window.clip_fetchVideoFormats(videoUrl)
-          .then((formats: any) => {
-            if (formats && formats.length) {
-              setQualityFormats(formats)
-              window.clip_updateQualityOptions(formats)
-            } else {
-              setFormatError('No formats detected')
-              if (window.clip_updateQualityOptionsError) window.clip_updateQualityOptionsError('No formats detected')
-            }
-          })
-          .catch((error: any) => {
-            console.warn('Clipper: Failed to fetch video formats:', error)
-            const message = error && error.message ? error.message : 'Failed to load formats'
-            setFormatError(message)
-            if (window.clip_updateQualityOptionsError) window.clip_updateQualityOptionsError(message)
-          })
-          .finally(() => setLoadingFormats(false))
-      }
-    } else {
-      // Menu is closing
-      if (window.clip_restorePlayerControlsVisibility) window.clip_restorePlayerControlsVisibility()
+      })
+      return
     }
-  }, [isOpen])
 
-  // Sync global state
+    if (seconds === -1) {
+      showNotImplementedToast('Full Video')
+      return
+    }
+
+    const videoElement = getActiveVideoElement()
+    if (!videoElement) {
+      toaster.create({
+        title: 'Video not found',
+        description: 'clip-dl could not find the active YouTube video element on this page.',
+        duration: 5000,
+        closable: true,
+      })
+      return
+    }
+
+    const endTimeSeconds = Number(videoElement.currentTime.toFixed(3))
+    const startTimeSeconds = Number(Math.max(endTimeSeconds - seconds, 0).toFixed(3))
+
+    const request: ClipDownloadRequest = {
+      type: 'download-clip',
+      url: window.location.href,
+      startTimeSeconds,
+      endTimeSeconds,
+      label,
+    }
+
+    const loadingToastId = `clip-download-${Date.now()}`
+
+    emitPageDebugLog({
+      stage: 'clip-download-requested',
+      request: {
+        ...request,
+        startTimeSeconds: formatSecondsForYtDlp(request.startTimeSeconds),
+        endTimeSeconds: formatSecondsForYtDlp(request.endTimeSeconds),
+      },
+    })
+
+    setIsDownloading(true)
+    toaster.loading({
+      id: loadingToastId,
+      title: 'Downloading clip',
+      description: `Saving the last ${label.toLowerCase()} ending at ${formatSecondsForYtDlp(Math.round(endTimeSeconds))}s.`,
+      closable: true,
+    })
+
+    let result: ClipDownloadResult | null = null
+
+    try {
+      // Content scripts cannot talk to native hosts directly. This proxy call
+      // hops into the background script, which then forwards the request to the
+      // Python host with browser.runtime.sendNativeMessage.
+      result = await clipDownloader.downloadClip(request)
+    } catch (error) {
+      result = {
+        ok: false,
+        code: 'download-failed',
+        message: String(error),
+      }
+    } finally {
+      setIsDownloading(false)
+      toaster.dismiss(loadingToastId)
+    }
+
+    emitPageDebugLog({ stage: 'clip-download-result', result })
+
+    if (result.ok) {
+      toaster.success({
+        title: 'Success',
+        description: `Saved ${result.fileName} to Downloads.`,
+        duration: 8000,
+        closable: true,
+      })
+      return
+    }
+
+    toaster.error({
+      title: 'Clip download failed',
+      description: result.message,
+      duration: 10000,
+      closable: true,
+    })
+  }, [isDownloading])
+
   useEffect(() => {
-    // Expose global functions for interop with other content scripts
+    // These globals preserve the current content-script integration points.
+    // They intentionally do less in v1 so unfinished controls stay visible
+    // without claiming to support full clipping workflows yet.
     window.clip_getAudioOnly = () => clipState.audioOnly
-    window.clip_setAudioOnly = (val: boolean) => { clipState.audioOnly = val }
+    window.clip_setAudioOnly = (value: boolean) => { clipState.audioOnly = value }
     window.clip_getStartTime = () => clipState.startTime
-    window.clip_setStartTime = (t: number) => { clipState.startTime = t }
+    window.clip_setStartTime = (time: number) => {
+      clipState.startTime = time
+      clipState.timeSelectionStatus = 'start_set'
+    }
     window.clip_getEndTime = () => clipState.endTime
-    window.clip_setEndTime = (t: number) => { clipState.endTime = t }
+    window.clip_setEndTime = (time: number) => {
+      clipState.endTime = time
+      clipState.timeSelectionStatus = 'end_set'
+    }
     window.clip_getTimeSelection = () => ({
       audioOnly: clipState.audioOnly,
       startTime: clipState.startTime,
       endTime: clipState.endTime,
-      timeSelectionStatus: 'none' as const,
+      timeSelectionStatus: clipState.timeSelectionStatus,
     })
     window.clip_clearTimeSelection = () => {
       clipState.startTime = null
       clipState.endTime = null
+      clipState.timeSelectionStatus = 'none'
     }
-    window.clip_toggleClipMenu = (e: MouseEvent) => {
-      if (e) e.stopPropagation()
-      setIsOpen(prev => !prev)
+    window.clip_toggleClipMenu = (event: MouseEvent) => {
+      if (event) event.stopPropagation()
+      setIsOpen((previous) => !previous)
     }
     window.clip_forceShowPlayerControls = () => { }
     window.clip_restorePlayerControlsVisibility = () => { }
-    window.clip_showTimelinePreview = (start: number, end: number) => { }
-    window.clip_fetchVideoFormats = (url: string) => Promise.resolve(qualityFormats)
-    window.clip_updateQualityOptions = (formats: any) => {
+    window.clip_showTimelinePreview = (_start: number, _end: number) => { }
+    window.clip_fetchVideoFormats = async (_url: string) => []
+    window.clip_updateQualityOptions = (formats: { label: string; value: string }[]) => {
       setQualityFormats(formats)
       clipState.qualityFormats = formats
     }
-    window.clip_updateQualityOptionsError = (msg: string) => setFormatError(msg)
+    window.clip_updateQualityOptionsError = (message: string) => setFormatError(message)
     window.clip_isExtensionContextValid = () => true
     window.clip_handleInvalidContext = () => { }
-    window.clip_handleClipOptionClick = (e: MouseEvent) => { }
-    window.clip_handleCustomClipDownload = (seconds: number, startTime: number | null) => {
-      console.log('clip_handleCustomClipDownload:', seconds, startTime)
+    window.clip_handleClipOptionClick = (_event: MouseEvent) => { }
+    window.clip_handleCustomClipDownload = (_seconds: number, _startTime: number | null) => {
+      showNotImplementedToast('Custom clip download')
     }
-  }, [qualityFormats])
+  }, [])
 
   return (
     <Popover.Root
       portalled={false}
       open={isOpen}
-      onOpenChange={(e) => setIsOpen(e.open)}
+      onOpenChange={(event) => setIsOpen(event.open)}
     >
       <Popover.Trigger
         asChild
@@ -623,12 +713,12 @@ export default function Clipper() {
             <Box display={"flex"} flexDirection={"column"} gap={2} width={"full"}>
               <AudioOnlyToggle />
               <QualitySelector formats={qualityFormats} loading={loadingFormats} error={formatError} />
-              <DurationButtons />
+              <DurationButtons isDownloading={isDownloading} onDownload={handleDurationDownload} />
               <TimeSelection />
             </Box>
           </Popover.Body>
         </Popover.Content>
       </Popover.Positioner>
-    </Popover.Root >
+    </Popover.Root>
   )
 }
