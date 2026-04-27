@@ -1,24 +1,59 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import struct
 import subprocess
 import sys
 import tempfile
-import time
 from contextlib import contextmanager
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Iterator
 import ctypes  
 from pathvalidate import sanitize_filename 
 
 LOCK_FILE_PATH = Path(tempfile.gettempdir()) / 'clip-dl-native-host.lock'
+LOG_DIR = Path(__file__).resolve().parent / 'logs'
+LOG_FILE_PATH = LOG_DIR / 'host.log'
 
-#TODO: Create a log file within the project that the host can write to for debugging purposes, instead of relying on the console output. All of the progress that the host makes should be logged to this file. For example: ALL of the output from the yt-dlp and ffmpeg processes, when they start and finish, any errors that occur, when the host receives a request, when it sends a response, etc.
-def _log(message: str) -> None:
-    print(f'[clip-dl native host] {message}', file=sys.stderr, flush=True)
+def _configure_logging() -> None:
+    """Configure logging with rotating file handler and console output."""
+    logger = logging.getLogger('clip-dl')
+    logger.setLevel(logging.DEBUG)
+    
+    # Clear any existing handlers
+    logger.handlers.clear()
+    
+    # Create log directory
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    
+    # Create formatter
+    formatter = logging.Formatter(
+        '%(asctime)s,%(msecs)03d - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
+    # File handler with rotation (5 files, 10MB each)
+    file_handler = RotatingFileHandler(
+        LOG_FILE_PATH,
+        maxBytes=10 * 1024 * 1024,  # 10MB
+        backupCount=5
+    )
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    
+    # Console handler
+    console_handler = logging.StreamHandler(sys.stderr)
+    console_handler.setLevel(logging.DEBUG)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
+_configure_logging()
+logger = logging.getLogger('clip-dl')
 
 
 def _read_native_message() -> dict[str, Any] | None:
@@ -120,8 +155,10 @@ def _validate_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, d
 def _require_tool(tool_name: str) -> tuple[str | None, dict[str, Any] | None]:
     tool_path = shutil.which(tool_name)
     if tool_path:
+        logger.debug(f'Tool found: {tool_name} at {tool_path}')
         return tool_path, None
 
+    logger.warning(f'Tool not found: {tool_name}')
     return None, _error_response(
         'missing-tool',
         f"'{tool_name}' was not found on PATH. Install it and make sure a new terminal can run `{tool_name} --version`.",
@@ -170,6 +207,7 @@ def _build_download_command(request: dict[str, Any], downloads_path: Path) -> li
     return [
         'yt-dlp',
         '--no-warnings',
+        '--verbose',
         '--windows-filenames', # Forces yt-dlp to be careful with Windows reserved names
         '--restrict-filenames', # Swaps spaces and special chars for underscores
         '--progress',
@@ -261,6 +299,8 @@ def _run_visible_download(job_path: Path) -> int:
         pass # Fallback if not on Windows
     
     def run_and_stream(command: list[str], title: str) -> int:
+        logger.info(title)
+        logger.debug(f'Command: {" ".join(command)}')
         print(f'[clip-dl native host] {title}')
         print('[clip-dl native host] Command:')
         print(' '.join(command))
@@ -280,22 +320,36 @@ def _run_visible_download(job_path: Path) -> int:
         assert process.stdout is not None
         for line in process.stdout:
             print(line, end='')
+            # Log yt-dlp/ffmpeg output lines as they arrive
+            line_stripped = line.rstrip('\n\r')
+            if line_stripped:
+                logger.info(f'yt-dlp output: {line_stripped}')
             combined_output.append(line)
 
         process.wait()
         print('')
         return process.returncode
 
+    logger.info('Starting yt-dlp download stage')
     download_returncode = run_and_stream(download_command, 'Running yt-dlp download stage in a visible console window')
     if download_returncode == 0:
+        logger.info('yt-dlp download stage completed successfully')
         temp_download_path = _extract_output_path(''.join(combined_output))
+        if temp_download_path:
+            logger.info(f'temp download path: {temp_download_path}')
+    else:
+        logger.error(f'yt-dlp download stage failed with return code {download_returncode}')
 
     remux_returncode = 0
     if download_returncode == 0 and temp_download_path is not None:
         final_output_path = _derive_final_output_path(temp_download_path)
+        logger.info(f'Starting ffmpeg remux stage: {temp_download_path} -> {final_output_path}')
         remux_command = _build_remux_command(temp_download_path, final_output_path)
         remux_returncode = run_and_stream(remux_command, 'Running ffmpeg remux stage')
+        if remux_returncode == 0:
+            logger.info(f'ffmpeg remux stage completed successfully: {final_output_path}')
     elif download_returncode == 0:
+        logger.warning('yt-dlp succeeded but could not determine temp download path for ffmpeg remux')
         combined_output.append('clip-dl could not determine the temporary download path for the ffmpeg remux stage.\n')
         remux_returncode = 1
 
@@ -312,15 +366,19 @@ def _run_visible_download(job_path: Path) -> int:
     _write_json(result_path, result)
 
     if overall_returncode == 0:
+        logger.info('Clip download completed successfully')
         print('')
         print('[clip-dl native host] Clip download completed.')
         if temp_download_path is not None and temp_download_path.exists():
             try:
                 temp_download_path.unlink()
+                logger.info(f'Removed temp clip: {temp_download_path}')
             except OSError:
+                logger.warning(f'Failed to remove temp clip {temp_download_path}')
                 print(f'[clip-dl native host] Warning: failed to remove temp clip {temp_download_path}')
         time.sleep(2)
     else:
+        logger.error(f'Clip download failed with return code {overall_returncode}')
         print('')
         print('[clip-dl native host] Clip download failed. Leaving this window open briefly so the error is visible.')
         time.sleep(8)
@@ -373,6 +431,7 @@ def _run_command_with_visible_progress(download_command: list[str]) -> subproces
 
 
 def _run_self_test() -> int:
+    logger.info('Running self-test')
     missing_tools: list[str] = []
     for tool_name in ('yt-dlp', 'ffmpeg', 'ffprobe'):
         if shutil.which(tool_name) is None:
@@ -380,10 +439,12 @@ def _run_self_test() -> int:
 
     if missing_tools:
         print('Missing tools:', ', '.join(missing_tools))
+        logger.error(f'Self-test failed: missing tools: {", ".join(missing_tools)}')
         return 1
 
     print('All required tools are available on PATH.')
     print(f'Default downloads directory: {Path.home() / "Downloads"}')
+    logger.info('Self-test passed')
     return 0
 
 
@@ -420,29 +481,37 @@ def main() -> int:
         return _run_visible_download(Path(sys.argv[2]))
 
     if sys.stdin.isatty():
-        _log('No native messaging input detected. Use --self-test or launch through Chrome.')
+        logger.info('No native messaging input detected. Use --self-test or launch through Chrome.')
         return 0
 
     message = _read_native_message()
     if message is None:
+        logger.info('No native message received.')
         _write_native_message(_error_response('bad-request', 'No native message received.'))
         return 0
 
+    logger.debug(f'Received request: type={message.get("type")}')
+
     request, validation_error = _validate_request(message)
     if validation_error:
+        logger.warning(f'Validation error: {validation_error.get("code")}: {validation_error.get("message")}')
         _write_native_message(validation_error)
         return 0
 
     if request is None:
+        logger.warning('No valid request payload provided.')
         _write_native_message(_error_response('bad-request', 'No valid request payload was provided.'))
         return 0
 
     if request['type'] == 'show-downloaded-clip-in-folder':
+        logger.info(f'Showing downloaded clip in folder: {request["outputPath"]}')
         opened, error_message = _show_downloaded_clip_in_folder(request['outputPath'], request['highlightFile'])
         if not opened:
+            logger.error(f'Failed to show clip in folder: {error_message}')
             _write_native_message(_error_response('show-file-failed', error_message or 'Failed to open folder in Explorer.'))
             return 0
 
+        logger.info('Successfully opened folder in Explorer')
         _write_native_message({
             'ok': True,
             'opened': True,
@@ -453,24 +522,30 @@ def main() -> int:
 
     downloads_path = Path.home() / 'Downloads'
     downloads_path.mkdir(parents=True, exist_ok=True)
+    logger.debug(f'Downloads path: {downloads_path}')
 
     for tool_name in ('yt-dlp', 'ffmpeg', 'ffprobe'):
         _, missing_tool_error = _require_tool(tool_name)
         if missing_tool_error:
+            logger.error(f'Missing tool check failed: {missing_tool_error.get("message")}')
             _write_native_message(missing_tool_error)
             return 0
+
+    logger.info(f'Processing download-clip request: url={request["url"]}, label={request["label"]}, start={request["startTimeSeconds"]}, end={request["endTimeSeconds"]}')
 
     try:
         with _single_download_lock():
             download_command = _build_download_command(request, downloads_path)
-            _log(f'Executing with visible progress window: {download_command!r}')
+            logger.debug(f'Executing with visible progress window: {download_command!r}')
             completed_process = _run_command_with_visible_progress(download_command)
     except RuntimeError as error:
         if str(error) == 'busy':
+            logger.warning('Another clip download is already running (busy lock)')
             _write_native_message(_error_response('busy', 'Another clip download is already running.'))
             return 0
         raise
     except Exception as error:
+        logger.error(f'Failed to start yt-dlp: {error}')
         _write_native_message(_error_response('download-failed', f'Failed to start yt-dlp: {error}'))
         return 0
 
@@ -478,16 +553,22 @@ def main() -> int:
     stderr = completed_process.stderr.strip()
 
     if completed_process.returncode != 0:
-        _log(f'yt-dlp failed with code {completed_process.returncode}: {stderr}')
-        error_text = stderr or stdout or f'yt-dlp exited with code {completed_process.returncode}.'
+        logger.error(f'yt-dlp/ffmpeg failed with return code {completed_process.returncode}')
+        if stdout:
+            logger.error(f'yt-dlp/ffmpeg stdout:\n{stdout}')
+        if stderr:
+            logger.error(f'yt-dlp/ffmpeg stderr:\n{stderr}')
+        error_text = stderr or stdout or f'yt-dlp/ffmpeg exited with code {completed_process.returncode}.'
         _write_native_message(_error_response('download-failed', error_text))
         return 0
 
     output_path = getattr(completed_process, 'resolved_final_output_path', None)
     if output_path is None or not output_path.exists():
+        logger.error('ffmpeg finished but the final output file was not found')
         _write_native_message(_error_response('download-failed', 'ffmpeg finished but the final output file was not found.'))
         return 0
 
+    logger.info(f'Download completed successfully: {output_path}')
     _write_native_message({
         'ok': True,
         'outputPath': str(output_path),
