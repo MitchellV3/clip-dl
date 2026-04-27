@@ -92,6 +92,7 @@ def _validate_download_clip_request(message: dict[str, Any]) -> tuple[dict[str, 
     label = message.get('label')
     start_time_seconds = message.get('startTimeSeconds')
     end_time_seconds = message.get('endTimeSeconds')
+    audio_only = message.get('audioOnly', False)
 
     if not isinstance(url, str) or not url:
         return None, _error_response('bad-request', 'A non-empty video URL is required.')
@@ -117,6 +118,7 @@ def _validate_download_clip_request(message: dict[str, Any]) -> tuple[dict[str, 
         'label': label,
         'startTimeSeconds': round(start_time_seconds, 3),
         'endTimeSeconds': round(end_time_seconds, 3),
+        'audioOnly': bool(audio_only),
     }, None
 
 
@@ -172,7 +174,7 @@ def _sanitize_file_token(value: str) -> str:
 def _format_yt_dlp_seconds(seconds: float) -> str:
     return f'{seconds:.3f}'
 
-#TODO: I want to change the default filetype that yt-dlp downloads to mkv. Later on, in the extension settings we can allow the user to configure the default output format. For now though, we just want to ensure that webm is no longer the default. I am not sure if this should be done through the yt-dlp download step or the ffmpeg remux step.
+#TODO: I want to change the default filetype that yt-dlp downloads to mkv. Later on, in the extension settings we can allow the user to configure the default output format. For now though, we just want to ensure that webm is no longer the default. I am not sure if this should be done through the yt-dlp download step or the ffmpeg remux step. I also want to change the default audio-only filetype to mp3.
 def _build_output_template(request: dict[str, Any]) -> str:
     start_ms = int(round(request['startTimeSeconds'] * 1000))
     end_ms = int(round(request['endTimeSeconds'] * 1000))
@@ -198,13 +200,14 @@ def _build_temp_output_template(request: dict[str, Any]) -> str:
 def _build_download_command(request: dict[str, Any], downloads_path: Path) -> list[str]:
     duration_seconds = request['endTimeSeconds'] - request['startTimeSeconds']
     output_template = _build_temp_output_template(request)
+    audio_only = request.get('audioOnly', False)
 
     # yt-dlp still owns the YouTube extraction/download phase. We keep the
     # section download here so only the requested range is fetched, but we do
     # not ask yt-dlp to force keyframes because that triggers an expensive
     # re-encode path.
 
-    return [
+    command = [
         'yt-dlp',
         '--no-warnings',
         '--verbose',
@@ -218,27 +221,34 @@ def _build_download_command(request: dict[str, Any], downloads_path: Path) -> li
         '--paths', f'home:{downloads_path}',
         '--output', output_template,
         '--print', 'after_move:%(filepath)s',
-        request['url'],
     ]
 
+    if audio_only:
+        command.extend(['-x'])
 
-def _build_remux_command(input_path: Path, output_path: Path) -> list[str]:
+    command.append(request['url'])
+    return command
+
+
+def _build_remux_command(input_path: Path, output_path: Path, audio_only: bool = False) -> list[str]:
     # This is the exact post-download ffmpeg shape requested by the user. The
     # extra remux pass resets the container timestamps/keyframe handling after
     # yt-dlp finishes producing the clip file.
-    return [
+    command = [
         'ffmpeg',
         '-y',
         '-ss',
         '0',
         '-i',
         str(input_path),
-        '-map',
-        '0',
-        '-c',
-        'copy',
-        str(output_path),
     ]
+
+    if audio_only:
+        command.extend(['-map', 'a', '-c', 'copy', str(output_path)])
+    else:
+        command.extend(['-map', '0', '-c', 'copy', str(output_path)])
+
+    return command
 
 
 def _derive_final_output_path(temp_download_path: Path) -> Path:
@@ -343,8 +353,9 @@ def _run_visible_download(job_path: Path) -> int:
     remux_returncode = 0
     if download_returncode == 0 and temp_download_path is not None:
         final_output_path = _derive_final_output_path(temp_download_path)
+        audio_only = job.get('audioOnly', False)
         logger.info(f'Starting ffmpeg remux stage: {temp_download_path} -> {final_output_path}')
-        remux_command = _build_remux_command(temp_download_path, final_output_path)
+        remux_command = _build_remux_command(temp_download_path, final_output_path, audio_only)
         remux_returncode = run_and_stream(remux_command, 'Running ffmpeg remux stage')
         if remux_returncode == 0:
             logger.info(f'ffmpeg remux stage completed successfully: {final_output_path}')
@@ -386,7 +397,7 @@ def _run_visible_download(job_path: Path) -> int:
     return overall_returncode
 
 
-def _run_command_with_visible_progress(download_command: list[str]) -> subprocess.CompletedProcess[str]:
+def _run_command_with_visible_progress(download_command: list[str], request: dict[str, Any]) -> subprocess.CompletedProcess[str]:
     with tempfile.TemporaryDirectory(prefix='clip-dl-progress-') as temp_directory:
         temp_path = Path(temp_directory)
         stdout_path = temp_path / 'stdout.txt'
@@ -399,6 +410,8 @@ def _run_command_with_visible_progress(download_command: list[str]) -> subproces
             'resultPath': str(result_path),
             'stdoutPath': str(stdout_path),
             'stderrPath': str(stderr_path),
+            'audioOnly': request.get('audioOnly', False),
+            'label': request.get('label', 'Clip'),
         })
 
         helper_process = subprocess.Popen(
@@ -537,7 +550,7 @@ def main() -> int:
         with _single_download_lock():
             download_command = _build_download_command(request, downloads_path)
             logger.debug(f'Executing with visible progress window: {download_command!r}')
-            completed_process = _run_command_with_visible_progress(download_command)
+            completed_process = _run_command_with_visible_progress(download_command, request)
     except RuntimeError as error:
         if str(error) == 'busy':
             logger.warning('Another clip download is already running (busy lock)')

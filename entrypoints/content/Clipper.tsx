@@ -130,7 +130,6 @@ const clipDurations = [
 ]
 
 // Audio-only toggle sub-component
-//TODO: Implement the audio-only toggle switch. When the user clicks this switch, there should be no video saved in the downloaded clip, only audio. I believe the best way to do this is to add -x to the yt-dlp flags. This might cause issues with the current ffmpeg remuxing step, so we need to make sure that ffmpeg is set up to handle audio-only inputs and outputs the correct format. We should also consider how this interacts with the quality selector, since some formats might be video-only or audio-only, and we need to make sure the user can only select compatible formats when audio-only mode is enabled.
 function AudioOnlyToggle() {
   const [active, setActive] = useState(clipState.audioOnly)
 
@@ -148,7 +147,7 @@ function AudioOnlyToggle() {
       padding={'4px 2px 4px'}
     >
       <Button
-        onClick={() => showNotImplementedToast('Audio Only')}
+        onClick={handleClick}
         display={'flex'}
         alignItems={'center'}
         justifyContent={'space-between'}
@@ -659,6 +658,7 @@ export default function Clipper() {
       startTimeSeconds,
       endTimeSeconds,
       label,
+      audioOnly: clipState.audioOnly,
     }
 
     const loadingToastId = `clip-download-${Date.now()}`

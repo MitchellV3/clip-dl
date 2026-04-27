@@ -6,6 +6,7 @@ export interface ClipDownloadRequest {
     startTimeSeconds: number
     endTimeSeconds: number
     label: string
+    audioOnly?: boolean
 }
 
 export interface ShowDownloadedClipInFolderRequest {
