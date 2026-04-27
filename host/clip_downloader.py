@@ -174,7 +174,7 @@ def _sanitize_file_token(value: str) -> str:
 def _format_yt_dlp_seconds(seconds: float) -> str:
     return f'{seconds:.3f}'
 
-#TODO: I want to change the default filetype that yt-dlp downloads to mkv. Later on, in the extension settings we can allow the user to configure the default output format. For now though, we just want to ensure that webm is no longer the default. I am not sure if this should be done through the yt-dlp download step or the ffmpeg remux step. I also want to change the default audio-only filetype to mp3.
+# Output format (mkv for video, mp3 for audio-only) is configured in _build_download_command.
 def _build_output_template(request: dict[str, Any]) -> str:
     start_ms = int(round(request['startTimeSeconds'] * 1000))
     end_ms = int(round(request['endTimeSeconds'] * 1000))
@@ -224,8 +224,9 @@ def _build_download_command(request: dict[str, Any], downloads_path: Path) -> li
     ]
 
     if audio_only:
-        command.extend(['-x'])
-
+        command.extend(['-x', '--audio-format', 'mp3'])
+#Eventually can add a user option to change the preset to mp4 here
+    command.extend(['-t', 'mkv'])
     command.append(request['url'])
     return command
 
