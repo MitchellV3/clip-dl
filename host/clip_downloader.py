@@ -16,7 +16,7 @@ from pathvalidate import sanitize_filename
 
 LOCK_FILE_PATH = Path(tempfile.gettempdir()) / 'clip-dl-native-host.lock'
 
-
+#TODO: Create a log file within the project that the host can write to for debugging purposes, instead of relying on the console output. All of the progress that the host makes should be logged to this file. For example: ALL of the output from the yt-dlp and ffmpeg processes, when they start and finish, any errors that occur, when the host receives a request, when it sends a response, etc.
 def _log(message: str) -> None:
     print(f'[clip-dl native host] {message}', file=sys.stderr, flush=True)
 
@@ -48,7 +48,7 @@ def _error_response(code: str, message: str) -> dict[str, Any]:
         'message': message,
     }
 
-
+#TODO: Make sure that the we check there is enough disk space before starting the download, and return a clear error message if not.
 def _validate_download_clip_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     if message.get('type') != 'download-clip':
         return None, _error_response('bad-request', "Expected request type 'download-clip'.")
@@ -135,7 +135,7 @@ def _sanitize_file_token(value: str) -> str:
 def _format_yt_dlp_seconds(seconds: float) -> str:
     return f'{seconds:.3f}'
 
-
+#TODO: I want to change the default filetype that yt-dlp downloads to mkv. Later on, in the extension settings we can allow the user to configure the default output format. For now though, we just want to ensure that webm is no longer the default. I am not sure if this should be done through the yt-dlp download step or the ffmpeg remux step.
 def _build_output_template(request: dict[str, Any]) -> str:
     start_ms = int(round(request['startTimeSeconds'] * 1000))
     end_ms = int(round(request['endTimeSeconds'] * 1000))

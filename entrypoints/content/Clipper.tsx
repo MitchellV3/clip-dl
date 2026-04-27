@@ -102,6 +102,9 @@ function renderTimelinePreviewOverlay(startSeconds: number, endSeconds: number) 
 // Shared state for window.clip_* interop. The current v1 only wires duration
 // buttons to the native host, but we keep these globals documented here because
 // other content-side code already expects them to exist.
+
+//TODO: Eventually we will let the user go into the extension settings and configure the default options here, such as default clip duration, whether to default to audio-only mode, default quality format, etc.
+
 const clipState = {
   audioOnly: false,
   startTime: null as number | null,
@@ -109,7 +112,6 @@ const clipState = {
   timeSelectionStatus: 'none' as 'none' | 'start_set' | 'end_set' | 'both_set',
   qualityFormats: [] as { label: string; value: string }[],
 }
-
 const clipDurations = [
   { label: '10 seconds', seconds: 10 },
   { label: '30 seconds', seconds: 30 },
@@ -121,6 +123,7 @@ const clipDurations = [
 ]
 
 // Audio-only toggle sub-component
+//TODO: Implement the audio-only toggle switch. When the user clicks this switch, there should be no video saved in the downloaded clip, only audio. I believe the best way to do this is to add -x to the yt-dlp flags. This might cause issues with the current ffmpeg remuxing step, so we need to make sure that ffmpeg is set up to handle audio-only inputs and outputs the correct format. We should also consider how this interacts with the quality selector, since some formats might be video-only or audio-only, and we need to make sure the user can only select compatible formats when audio-only mode is enabled.
 function AudioOnlyToggle() {
   const [active, setActive] = useState(clipState.audioOnly)
 
@@ -184,6 +187,7 @@ function AudioOnlyToggle() {
 }
 
 // Quality selector sub-component
+//TODO: Implement the quality selector. The formats will either need to be fetched directly from the YouTube page's quality options or requested from the native host using yt-dlp's format detection. The dropdown is then asynchronously populated from that list of quality options. The user should be able to select a quality format from the dropdown, and that format should be sent to the native host to be used in the yt-dlp download request. We should also handle the case where no formats are available or an error occurs while fetching formats, and display an appropriate message in the dropdown.
 function QualitySelector({ formats, loading, error }: { formats: { label: string; value: string }[], loading: boolean, error: string | null }) {
   return (
     <Box
@@ -263,6 +267,7 @@ function QualitySelector({ formats, loading, error }: { formats: { label: string
   )
 }
 
+//TODO: The 'Full Video' option is currently not-yet-implemented and needs to be wired to the native host. When the user clicks the 'Full Video' button, we do not need to send a duration to the native host, just passing the URL to yt-dlp will download the full thing. This also means we can likely skip the ffmpeg remuxing step for keyframe issues, since we will have downloaded the video in its entirety. 
 function DurationButtons({
   isDownloading,
   onDownload,
@@ -362,6 +367,9 @@ function TimeSelection() {
     updateStatus()
   }, [updateStatus])
 
+  //TODO: Implement startTime and endTime and wire them up to the native host so they can be used in clip download requests. 
+  // The general flow for these buttons is: 
+  // - The user clicks the "set start time" button, we record that time as the start time of the clip, and then wait for the user to click the "set end time" button. The entire time selection will be visualized with an overlay on the video timeline. If the user clicks "set start time" again, we update the start time to the new time. If the user clicks "set end time" before setting a start time, we can set the end time and just treat the start time as 0. If the user clicks "cancel selection", we clear both start and end times and remove the timeline overlay. If the user clicks "download clip" with a valid time selection, we send those times to the native host to be used in the yt-dlp download request.
   function handleSetStart() {
     console.log('Setting start time for clip')
     const videoElement = document.querySelector('video.html5-main-video, video.video-player__video, video[playsinline]') as HTMLVideoElement | null
@@ -657,6 +665,7 @@ export default function Clipper() {
       },
     })
 
+    //TODO: I want to make the timestamp display in the toast more user-friendly, like "0:00:10 - 0:00:20" or something similar, instead of just showing a raw time value with a bunch of decimals. 
     setIsDownloading(true)
     toaster.loading({
       id: loadingToastId,
