@@ -90,7 +90,6 @@ function AudioOnlyToggle() {
         transition={'all 0.2s ease'}
         borderRadius={'4px'}
         _hover={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
-
       >
         <Text>
           Audio Only
@@ -596,12 +595,44 @@ export default function Clipper() {
 
     emitPageDebugLog({ stage: 'clip-download-result', result })
 
+    async function openFileLocation(result: Extract<ClipDownloadResult, { ok: true }>) {
+      if (result && result.outputPath) {
+        try {
+          const opened = await clipDownloader.showDownloadedClipInFolder(result.outputPath)
+          console.log('Explorer open result:', opened)
+          console.log('Expected path:', result.outputPath)
+          if (!opened) {
+            toaster.error({
+              title: 'File not found',
+              description: 'Could not find the downloaded clip in the selected folder.',
+              duration: 5000,
+              closable: true,
+            })
+          }
+        } catch {
+          toaster.error({
+            title: 'Folder access denied',
+            description: 'Cannot access the folder to show the downloaded clip.',
+            duration: 5000,
+            closable: true,
+          })
+        }
+      }
+
+    }
+
     if (result.ok) {
       toaster.success({
         title: 'Success',
         description: `Saved ${result.fileName} to Downloads.`,
         duration: 8000,
         closable: true,
+        action: {
+          label: 'Show file',
+          onClick: () => {
+            void openFileLocation(result)
+          },
+        },
       })
       return
     }

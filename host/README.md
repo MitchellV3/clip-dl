@@ -14,7 +14,7 @@ Chrome content scripts cannot call `browser.runtime.sendNativeMessage()` directl
 
 ## Files
 
-- `clip_downloader.py` — validates the request, checks PATH tools, builds the `yt-dlp` command, and returns one final result.
+- `clip_downloader.py` — validates the request, checks PATH tools, builds the `yt-dlp` command, opens a visible progress console, and returns one final result.
 - `run_clip_downloader.cmd` — small launcher referenced by the generated native host manifest.
 - `install_native_host.ps1` — generates the manifest for the current extension ID and registers it in the Windows registry.
 
@@ -67,11 +67,13 @@ End-to-end smoke test:
 2. Open a YouTube video.
 3. Seek to a known timestamp, for example 1:20.
 4. Click `30 seconds` in the clipper UI.
-5. Confirm a loading toast appears immediately, then a success or error toast appears when the host exits.
-6. Verify the clip lands in the user Downloads folder.
+5. Confirm a loading toast appears immediately and a separate console window shows live `yt-dlp` / `ffmpeg` output.
+6. Confirm a success or error toast appears when the host exits.
+7. Verify the clip lands in the user Downloads folder.
 
 ## Notes
 
 - The host writes all protocol/debug logs to `stderr`. Chrome native messaging ignores `stderr` for payloads, which keeps JSON responses on `stdout` clean.
-- `yt-dlp` section downloads rely on `ffmpeg`, which is why the host validates those tools before attempting the download.
+- The host uses `yt-dlp --downloader ffmpeg` with `ffmpeg_i:-ss ...` and `ffmpeg_o:-t ... -map 0 -c copy` so the trim uses fast input seeking and stream copy instead of `--force-keyframes-at-cuts`.
+- A helper console window is used so the user can watch live downloader progress while the hidden native host still waits for the final exit status and output path.
 - The installer also removes the old click-logger host registrations so Chrome does not keep pointing at the prototype host.

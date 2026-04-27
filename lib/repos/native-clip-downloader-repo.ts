@@ -8,6 +8,12 @@ export interface ClipDownloadRequest {
     label: string
 }
 
+export interface ShowDownloadedClipInFolderRequest {
+    type: 'show-downloaded-clip-in-folder'
+    outputPath: string
+    highlightFile?: boolean
+}
+
 export interface SuccessfulClipDownloadResult {
     ok: true
     outputPath: string
@@ -63,7 +69,30 @@ export function NativeClipDownloaderRepo() {
         }
     }
 
+    const showDownloadedClipInFolder = async (outputPath: string, highlightFile = true): Promise<boolean> => {
+        try {
+            const payload: ShowDownloadedClipInFolderRequest = {
+                type: 'show-downloaded-clip-in-folder',
+                outputPath,
+                highlightFile,
+            }
+
+            const response = await browser.runtime.sendNativeMessage(NATIVE_HOST_NAME, payload) as {
+                ok?: boolean
+                opened?: boolean
+            }
+
+            return Boolean(response?.ok && response?.opened)
+        } catch (error) {
+            console.warn('[clip-dl] Show downloaded clip in folder error:', error)
+            return false
+        }
+    }
+
     return {
         downloadClip,
+        showDownloadedClipInFolder,
     }
+
+
 }

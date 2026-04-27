@@ -11,7 +11,8 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
-
+import ctypes  
+from pathvalidate import sanitize_filename 
 
 LOCK_FILE_PATH = Path(tempfile.gettempdir()) / 'clip-dl-native-host.lock'
 
@@ -48,7 +49,7 @@ def _error_response(code: str, message: str) -> dict[str, Any]:
     }
 
 
-def _validate_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+def _validate_download_clip_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     if message.get('type') != 'download-clip':
         return None, _error_response('bad-request', "Expected request type 'download-clip'.")
 
@@ -84,6 +85,38 @@ def _validate_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, d
     }, None
 
 
+def _validate_show_downloaded_clip_in_folder_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    if message.get('type') != 'show-downloaded-clip-in-folder':
+        return None, _error_response('bad-request', "Expected request type 'show-downloaded-clip-in-folder'.")
+
+    output_path = message.get('outputPath')
+    highlight_file = message.get('highlightFile', True)
+
+    if not isinstance(output_path, str) or not output_path.strip():
+        return None, _error_response('bad-request', 'A non-empty outputPath is required.')
+
+    if not isinstance(highlight_file, bool):
+        return None, _error_response('bad-request', 'highlightFile must be a boolean when provided.')
+
+    return {
+        'type': 'show-downloaded-clip-in-folder',
+        'outputPath': output_path,
+        'highlightFile': highlight_file,
+    }, None
+
+
+def _validate_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    request_type = message.get('type')
+
+    if request_type == 'download-clip':
+        return _validate_download_clip_request(message)
+
+    if request_type == 'show-downloaded-clip-in-folder':
+        return _validate_show_downloaded_clip_in_folder_request(message)
+
+    return None, _error_response('bad-request', "Expected request type 'download-clip' or 'show-downloaded-clip-in-folder'.")
+
+
 def _require_tool(tool_name: str) -> tuple[str | None, dict[str, Any] | None]:
     tool_path = shutil.which(tool_name)
     if tool_path:
@@ -106,10 +139,13 @@ def _format_yt_dlp_seconds(seconds: float) -> str:
 def _build_output_template(request: dict[str, Any]) -> str:
     start_ms = int(round(request['startTimeSeconds'] * 1000))
     end_ms = int(round(request['endTimeSeconds'] * 1000))
-    label_token = _sanitize_file_token(request['label']).lower()
-
-    return f'%(title).180B [%(id)s] {label_token} {start_ms}-{end_ms}.%(ext)s'
-
+    
+    # Sanitize the label and a placeholder for the title
+    label_token = sanitize_filename(request['label']).lower().replace(" ", "-")
+    
+    # We tell yt-dlp to limit the title length and we use its internal 
+    # restricted filenames logic as a first layer of defense.
+    return f'%(title).100s [%(id)s] {label_token} {start_ms}-{end_ms}.%(ext)s'
 
 def _build_temp_output_template(request: dict[str, Any]) -> str:
     start_ms = int(round(request['startTimeSeconds'] * 1000))
@@ -130,18 +166,20 @@ def _build_download_command(request: dict[str, Any], downloads_path: Path) -> li
     # section download here so only the requested range is fetched, but we do
     # not ask yt-dlp to force keyframes because that triggers an expensive
     # re-encode path.
+
     return [
         'yt-dlp',
         '--no-warnings',
-        '--windows-filenames',
+        '--windows-filenames', # Forces yt-dlp to be careful with Windows reserved names
+        '--restrict-filenames', # Swaps spaces and special chars for underscores
+        '--progress',
+        # This template forces a newline and a specific format Python can't miss
+        '--progress-template', 'download:[download] %(progress._percent_str)s of %(progress._total_bytes_str)s at %(progress._speed_str)s ETA %(progress._eta_str)s',
         '--download-sections',
         f'*{_format_yt_dlp_seconds(request["startTimeSeconds"])}-{_format_yt_dlp_seconds(request["endTimeSeconds"])}',
-        '--paths',
-        f'home:{downloads_path}',
-        '--output',
-        output_template,
-        '--print',
-        'after_move:%(filepath)s',
+        '--paths', f'home:{downloads_path}',
+        '--output', output_template,
+        '--print', 'after_move:%(filepath)s',
         request['url'],
     ]
 
@@ -216,7 +254,12 @@ def _run_visible_download(job_path: Path) -> int:
     combined_output: list[str] = []
     temp_download_path: Path | None = None
     final_output_path: Path | None = None
-
+# SET THE WINDOW TITLE HERE
+    try:
+        ctypes.windll.kernel32.SetConsoleTitleW(f"Clip-DL: Downloading {job.get('label', 'Clip')}...")
+    except Exception:
+        pass # Fallback if not on Windows
+    
     def run_and_stream(command: list[str], title: str) -> int:
         print(f'[clip-dl native host] {title}')
         print('[clip-dl native host] Command:')
@@ -344,6 +387,31 @@ def _run_self_test() -> int:
     return 0
 
 
+def _show_downloaded_clip_in_folder(output_path: str, highlight_file: bool) -> tuple[bool, str | None]:
+    target_path = Path(output_path).expanduser()
+
+    try:
+        if target_path.exists() and target_path.is_dir():
+            subprocess.Popen(['explorer', str(target_path)], shell=False)
+            return True, None
+
+        if target_path.exists() and target_path.is_file():
+            if highlight_file:
+                subprocess.Popen(['explorer', '/select,', str(target_path)], shell=False)
+            else:
+                subprocess.Popen(['explorer', str(target_path.parent)], shell=False)
+            return True, None
+
+        parent_directory = target_path.parent
+        if parent_directory.exists() and parent_directory.is_dir():
+            subprocess.Popen(['explorer', str(parent_directory)], shell=False)
+            return True, None
+
+        return False, f'Could not open Explorer because neither the file nor parent folder exists: {target_path}'
+    except Exception as error:
+        return False, f'Failed to open folder in Explorer: {error}'
+
+
 def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == '--self-test':
         return _run_self_test()
@@ -363,6 +431,24 @@ def main() -> int:
     request, validation_error = _validate_request(message)
     if validation_error:
         _write_native_message(validation_error)
+        return 0
+
+    if request is None:
+        _write_native_message(_error_response('bad-request', 'No valid request payload was provided.'))
+        return 0
+
+    if request['type'] == 'show-downloaded-clip-in-folder':
+        opened, error_message = _show_downloaded_clip_in_folder(request['outputPath'], request['highlightFile'])
+        if not opened:
+            _write_native_message(_error_response('show-file-failed', error_message or 'Failed to open folder in Explorer.'))
+            return 0
+
+        _write_native_message({
+            'ok': True,
+            'opened': True,
+            'outputPath': request['outputPath'],
+            'highlighted': request['highlightFile'],
+        })
         return 0
 
     downloads_path = Path.home() / 'Downloads'
