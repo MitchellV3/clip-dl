@@ -36,6 +36,13 @@ function formatSecondsForYtDlp(seconds: number) {
   return seconds.toFixed(3)
 }
 
+function formatTimeDisplay(seconds: number) {
+  const totalSeconds = Math.round(seconds)
+  const minutes = Math.floor(totalSeconds / 60)
+  const remainingSeconds = totalSeconds % 60
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
+}
+
 const TIMELINE_PREVIEW_OVERLAY_ID = 'clip-dl-timeline-preview-overlay'
 
 function clearTimelinePreviewOverlay() {
@@ -665,12 +672,11 @@ export default function Clipper() {
       },
     })
 
-    //TODO: I want to make the timestamp display in the toast more user-friendly, like "0:00:10 - 0:00:20" or something similar, instead of just showing a raw time value with a bunch of decimals. 
     setIsDownloading(true)
     toaster.loading({
       id: loadingToastId,
       title: 'Downloading clip',
-      description: `Saving the last ${label.toLowerCase()} ending at ${formatSecondsForYtDlp(endTimeSeconds)}s. A progress window was opened on the desktop.`,
+      description: `Saving clip from ${formatTimeDisplay(startTimeSeconds)} to ${formatTimeDisplay(endTimeSeconds)}. A progress window was opened on the desktop.`,
       closable: true,
     })
 
