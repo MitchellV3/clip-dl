@@ -36,6 +36,69 @@ function formatSecondsForYtDlp(seconds: number) {
   return seconds.toFixed(3)
 }
 
+const TIMELINE_PREVIEW_OVERLAY_ID = 'clip-dl-timeline-preview-overlay'
+
+function clearTimelinePreviewOverlay() {
+  const overlay = document.getElementById(TIMELINE_PREVIEW_OVERLAY_ID)
+  if (overlay) {
+    overlay.remove()
+  }
+}
+
+function renderTimelinePreviewOverlay(startSeconds: number, endSeconds: number) {
+  const videoElement = getActiveVideoElement()
+  const timelineContainer = document.querySelector('.ytp-progress-bar-container') as HTMLElement | null
+
+  if (!videoElement || !timelineContainer) {
+    clearTimelinePreviewOverlay()
+    return
+  }
+
+  const durationSeconds = Number(videoElement.duration)
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    clearTimelinePreviewOverlay()
+    return
+  }
+
+  const start = Math.max(0, Math.min(Math.min(startSeconds, endSeconds), durationSeconds))
+  const end = Math.max(0, Math.min(Math.max(startSeconds, endSeconds), durationSeconds))
+  const span = end - start
+
+  if (span <= 0) {
+    clearTimelinePreviewOverlay()
+    return
+  }
+
+  let overlay = document.getElementById(TIMELINE_PREVIEW_OVERLAY_ID) as HTMLDivElement | null
+  if (!overlay) {
+    overlay = document.createElement('div')
+    overlay.id = TIMELINE_PREVIEW_OVERLAY_ID
+    overlay.style.position = 'absolute'
+    overlay.style.top = '0'
+    overlay.style.bottom = '0'
+    overlay.style.pointerEvents = 'none'
+    overlay.style.borderRadius = 'inherit'
+    overlay.style.background = 'rgba(74, 222, 128, 0.35)'
+    overlay.style.boxShadow = '0 0 0 1px rgba(74, 222, 128, 0.6) inset'
+    overlay.style.zIndex = '999999'
+    overlay.style.transition = 'left 120ms ease-out, width 120ms ease-out'
+    overlay.style.borderRadius = '4px'
+
+    const position = window.getComputedStyle(timelineContainer).position
+    if (position === 'static') {
+      timelineContainer.style.position = 'relative'
+    }
+
+    timelineContainer.appendChild(overlay)
+  }
+
+  const leftPercent = (start / durationSeconds) * 100
+  const widthPercent = (span / durationSeconds) * 100
+
+  overlay.style.left = `${leftPercent}%`
+  overlay.style.width = `${widthPercent}%`
+}
+
 // Shared state for window.clip_* interop. The current v1 only wires duration
 // buttons to the native host, but we keep these globals documented here because
 // other content-side code already expects them to exist.
@@ -216,6 +279,30 @@ function DurationButtons({
     await onDownload(seconds, label)
   }
 
+  function handleDurationButtonHover(e: React.MouseEvent, seconds: number) {
+    e.stopPropagation()
+
+    const videoElement = getActiveVideoElement()
+    if (!videoElement || !window.clip_showTimelinePreview) {
+      return
+    }
+
+    const endTimeSeconds = Number(videoElement.currentTime.toFixed(3))
+    if (seconds === -1) {
+      const fullVideoEnd = Number.isFinite(videoElement.duration) ? Number(videoElement.duration.toFixed(3)) : endTimeSeconds
+      window.clip_showTimelinePreview(0, fullVideoEnd)
+      return
+    }
+
+    const startTimeSeconds = Number(Math.max(endTimeSeconds - seconds, 0).toFixed(3))
+    window.clip_showTimelinePreview(startTimeSeconds, endTimeSeconds)
+  }
+
+  function handleDurationButtonHoverLeave(e: React.MouseEvent) {
+    e.stopPropagation()
+    clearTimelinePreviewOverlay()
+  }
+
   return (
     <Box
       display={"grid"}
@@ -247,6 +334,8 @@ function DurationButtons({
               backgroundColor: isFullVideo ? 'rgba(255, 255, 255, 0.1)' : 'rgba(74, 222, 128, 0.1)',
               borderColor: isFullVideo ? 'rgba(255, 255, 255, 0.3)' : 'rgba(74, 222, 128, 0.3)',
             }}
+            onMouseEnter={(event) => handleDurationButtonHover(event, duration.seconds)}
+            onMouseLeave={handleDurationButtonHoverLeave}
           >
             {duration.label}
           </Button>
@@ -502,6 +591,7 @@ export default function Clipper() {
       setQualityFormats([])
       setFormatError(FORMAT_PLACEHOLDER_MESSAGE)
     } else {
+      clearTimelinePreviewOverlay()
       if (window.clip_restorePlayerControlsVisibility) window.clip_restorePlayerControlsVisibility()
     }
   }, [isOpen])
@@ -678,7 +768,9 @@ export default function Clipper() {
     }
     window.clip_forceShowPlayerControls = () => { }
     window.clip_restorePlayerControlsVisibility = () => { }
-    window.clip_showTimelinePreview = (_start: number, _end: number) => { }
+    window.clip_showTimelinePreview = (start: number, end: number) => {
+      renderTimelinePreviewOverlay(start, end)
+    }
     window.clip_fetchVideoFormats = async (_url: string) => []
     window.clip_updateQualityOptions = (formats: { label: string; value: string }[]) => {
       setQualityFormats(formats)
