@@ -44,7 +44,7 @@ export interface SuccessfulFullVideoDownloadResult {
 
 export interface FailedClipDownloadResult {
     ok: false
-    code: 'busy' | 'native-host-unavailable' | 'missing-tool' | 'download-failed' | 'bad-request'
+    code: 'busy' | 'native-host-unavailable' | 'missing-tool' | 'download-failed' | 'bad-request' | 'insufficient-disk-space' | 'low-disk-space' | 'disk-error'
     message: string
 }
 

@@ -98,7 +98,6 @@ def _validate_download_request_fields(message: dict[str, Any], label_error_messa
     return url, label, bool(audio_only), None
 
 
-#TODO: Make sure that the we check there is enough disk space before starting the download, and return a clear error message if not.
 def _validate_download_clip_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     if message.get('type') != 'download-clip':
         return None, _error_response('bad-request', "Expected request type 'download-clip'.")
@@ -210,6 +209,61 @@ def _sanitize_file_token(value: str) -> str:
 
 def _format_yt_dlp_seconds(seconds: float) -> str:
     return f'{seconds:.3f}'
+
+
+def _get_estimated_file_size(url: str) -> int | None:
+    try:
+        result = subprocess.run(
+            ['yt-dlp', '--dump-json', '--no-download', '--skip-download', url],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            encoding='utf-8',
+            errors='replace',
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            info = json.loads(result.stdout)
+            filesize = info.get('filesize')
+            if filesize and isinstance(filesize, (int, float)) and filesize > 0:
+                return int(filesize)
+            filesize_approx = info.get('filesize_approx')
+            if filesize_approx and isinstance(filesize_approx, (int, float)) and filesize_approx > 0:
+                return int(filesize_approx)
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError, KeyError):
+        pass
+    return None
+
+
+def _check_disk_space(downloads_dir: Path, estimated_size: int | None) -> dict[str, Any] | None:
+    try:
+        disk_usage = shutil.disk_usage(downloads_dir)
+    except OSError as error:
+        return _error_response('disk-error', f'Could not check disk space: {error}')
+
+    available_bytes = disk_usage.free
+    free_gb = available_bytes / (1024 ** 3)
+
+    if estimated_size is not None and estimated_size > 0:
+        required_bytes = int(estimated_size * 1.25)
+        if available_bytes < required_bytes:
+            required_gb = required_bytes / (1024 ** 3)
+            return _error_response(
+                'insufficient-disk-space',
+                f'Not enough disk space to download this clip. '
+                f'Estimated size: {required_gb:.2f} GB, '
+                f'Available: {free_gb:.2f} GB. '
+                f'Please free up at least '
+                f'{(required_bytes - available_bytes) / (1024 ** 3):.2f} GB and try again.',
+            )
+
+    if free_gb < 0.5:
+        return _error_response(
+            'low-disk-space',
+            f'Your disk is running low on space ({free_gb:.2f} GB free). '
+            f'Please free up some space and try again.',
+        )
+
+    return None
 
 def _build_temp_output_template(request: dict[str, Any]) -> str:
     start_ms = int(round(request['startTimeSeconds'] * 1000))
@@ -591,6 +645,13 @@ def main() -> int:
             logger.error(f'Missing tool check failed: {missing_tool_error.get("message")}')
             _write_native_message(missing_tool_error)
             return 0
+
+    estimated_size = _get_estimated_file_size(request['url'])
+    disk_space_error = _check_disk_space(downloads_path, estimated_size)
+    if disk_space_error:
+        logger.warning(f'Disk space check failed: {disk_space_error.get("code")}: {disk_space_error.get("message")}')
+        _write_native_message(disk_space_error)
+        return 0
 
     if request['type'] == 'download-clip':
         logger.info(f'Processing download-clip request: url={request["url"]}, label={request["label"]}, start={request["startTimeSeconds"]}, end={request["endTimeSeconds"]}')

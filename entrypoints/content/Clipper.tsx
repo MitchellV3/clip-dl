@@ -738,6 +738,16 @@ export default function Clipper() {
       return
     }
 
+    if (result.code === 'insufficient-disk-space' || result.code === 'low-disk-space') {
+      toaster.error({
+        title: 'Insufficient disk space',
+        description: result.message,
+        duration: 10000,
+        closable: true,
+      })
+      return
+    }
+
     toaster.error({
       title: request.type === 'download-full-video' ? 'Full video download failed' : 'Clip download failed',
       description: result.message,
