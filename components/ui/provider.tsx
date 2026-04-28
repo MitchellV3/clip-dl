@@ -11,7 +11,7 @@ const customConfig = defineConfig({
   preflight: false,
   // We mount two separate integrated UIs (controls + toast),
   // so emit Chakra vars for both wrapper roots.
-  cssVarsRoot: ".clip-dl-ui-wrapper, .clip-dl-toast-wrapper",
+  cssVarsRoot: ".clip-dl-ui-wrapper, .clip-dl-toast-wrapper, .settings-wrapper",
 })
 
 // 3. Create the custom system
