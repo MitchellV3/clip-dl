@@ -8,12 +8,12 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
 from contextlib import contextmanager
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Iterator
-import ctypes  
-from pathvalidate import sanitize_filename 
+import ctypes
 
 LOCK_FILE_PATH = Path(tempfile.gettempdir()) / 'clip-dl-native-host.lock'
 LOG_DIR = Path(__file__).resolve().parent / 'logs'
@@ -83,22 +83,36 @@ def _error_response(code: str, message: str) -> dict[str, Any]:
         'message': message,
     }
 
+
+def _validate_download_request_fields(message: dict[str, Any], label_error_message: str) -> tuple[str | None, str | None, bool | None, dict[str, Any] | None]:
+    url = message.get('url')
+    label = message.get('label')
+    audio_only = message.get('audioOnly', False)
+
+    if not isinstance(url, str) or not url:
+        return None, None, None, _error_response('bad-request', 'A non-empty video URL is required.')
+
+    if not isinstance(label, str) or not label:
+        return None, None, None, _error_response('bad-request', label_error_message)
+
+    return url, label, bool(audio_only), None
+
+
 #TODO: Make sure that the we check there is enough disk space before starting the download, and return a clear error message if not.
 def _validate_download_clip_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     if message.get('type') != 'download-clip':
         return None, _error_response('bad-request', "Expected request type 'download-clip'.")
 
-    url = message.get('url')
-    label = message.get('label')
+    url, label, audio_only, validation_error = _validate_download_request_fields(message, 'A non-empty clip label is required.')
+    if validation_error:
+        return None, validation_error
+
+    assert url is not None
+    assert label is not None
+    assert audio_only is not None
+
     start_time_seconds = message.get('startTimeSeconds')
     end_time_seconds = message.get('endTimeSeconds')
-    audio_only = message.get('audioOnly', False)
-
-    if not isinstance(url, str) or not url:
-        return None, _error_response('bad-request', 'A non-empty video URL is required.')
-
-    if not isinstance(label, str) or not label:
-        return None, _error_response('bad-request', 'A non-empty clip label is required.')
 
     if not isinstance(start_time_seconds, (int, float)) or not isinstance(end_time_seconds, (int, float)):
         return None, _error_response('bad-request', 'Clip start/end times must be numeric.')
@@ -119,6 +133,26 @@ def _validate_download_clip_request(message: dict[str, Any]) -> tuple[dict[str, 
         'startTimeSeconds': round(start_time_seconds, 3),
         'endTimeSeconds': round(end_time_seconds, 3),
         'audioOnly': bool(audio_only),
+    }, None
+
+
+def _validate_download_full_video_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    if message.get('type') != 'download-full-video':
+        return None, _error_response('bad-request', "Expected request type 'download-full-video'.")
+
+    url, label, audio_only, validation_error = _validate_download_request_fields(message, 'A non-empty full-video label is required.')
+    if validation_error:
+        return None, validation_error
+
+    assert url is not None
+    assert label is not None
+    assert audio_only is not None
+
+    return {
+        'type': 'download-full-video',
+        'url': url,
+        'label': label,
+        'audioOnly': audio_only,
     }, None
 
 
@@ -148,10 +182,13 @@ def _validate_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, d
     if request_type == 'download-clip':
         return _validate_download_clip_request(message)
 
+    if request_type == 'download-full-video':
+        return _validate_download_full_video_request(message)
+
     if request_type == 'show-downloaded-clip-in-folder':
         return _validate_show_downloaded_clip_in_folder_request(message)
 
-    return None, _error_response('bad-request', "Expected request type 'download-clip' or 'show-downloaded-clip-in-folder'.")
+    return None, _error_response('bad-request', "Expected request type 'download-clip', 'download-full-video', or 'show-downloaded-clip-in-folder'.")
 
 
 def _require_tool(tool_name: str) -> tuple[str | None, dict[str, Any] | None]:
@@ -174,18 +211,6 @@ def _sanitize_file_token(value: str) -> str:
 def _format_yt_dlp_seconds(seconds: float) -> str:
     return f'{seconds:.3f}'
 
-# Output format (mkv for video, mp3 for audio-only) is configured in _build_download_command.
-def _build_output_template(request: dict[str, Any]) -> str:
-    start_ms = int(round(request['startTimeSeconds'] * 1000))
-    end_ms = int(round(request['endTimeSeconds'] * 1000))
-    
-    # Sanitize the label and a placeholder for the title
-    label_token = sanitize_filename(request['label']).lower().replace(" ", "-")
-    
-    # We tell yt-dlp to limit the title length and we use its internal 
-    # restricted filenames logic as a first layer of defense.
-    return f'%(title).100s [%(id)s] {label_token} {start_ms}-{end_ms}.%(ext)s'
-
 def _build_temp_output_template(request: dict[str, Any]) -> str:
     start_ms = int(round(request['startTimeSeconds'] * 1000))
     end_ms = int(round(request['endTimeSeconds'] * 1000))
@@ -197,36 +222,48 @@ def _build_temp_output_template(request: dict[str, Any]) -> str:
     return f'%(title).180B [%(id)s] {label_token} {start_ms}-{end_ms}.clip-dl-temp.%(ext)s'
 
 
-def _build_download_command(request: dict[str, Any], downloads_path: Path) -> list[str]:
-    duration_seconds = request['endTimeSeconds'] - request['startTimeSeconds']
-    output_template = _build_temp_output_template(request)
-    audio_only = request.get('audioOnly', False)
+def _build_full_video_output_template(request: dict[str, Any]) -> str:
+    label_token = _sanitize_file_token(request['label']).lower()
+    return f'%(title).180B [%(id)s] {label_token}.%(ext)s'
 
-    # yt-dlp still owns the YouTube extraction/download phase. We keep the
-    # section download here so only the requested range is fetched, but we do
-    # not ask yt-dlp to force keyframes because that triggers an expensive
-    # re-encode path.
+
+def _build_download_command(request: dict[str, Any], downloads_path: Path) -> list[str]:
+    audio_only = request.get('audioOnly', False)
 
     command = [
         'yt-dlp',
         '--no-warnings',
         '--verbose',
-        '--windows-filenames', # Forces yt-dlp to be careful with Windows reserved names
-        '--restrict-filenames', # Swaps spaces and special chars for underscores
+        '--windows-filenames',  # Forces yt-dlp to be careful with Windows reserved names
+        '--restrict-filenames',  # Swaps spaces and special chars for underscores
         '--progress',
         # This template forces a newline and a specific format Python can't miss
         '--progress-template', 'download:[download] %(progress._percent_str)s of %(progress._total_bytes_str)s at %(progress._speed_str)s ETA %(progress._eta_str)s',
-        '--download-sections',
-        f'*{_format_yt_dlp_seconds(request["startTimeSeconds"])}-{_format_yt_dlp_seconds(request["endTimeSeconds"])}',
         '--paths', f'home:{downloads_path}',
-        '--output', output_template,
         '--print', 'after_move:%(filepath)s',
     ]
 
+    if request['type'] == 'download-clip':
+        # yt-dlp still owns the YouTube extraction/download phase. We keep the
+        # section download here so only the requested range is fetched, but we do
+        # not ask yt-dlp to force keyframes because that triggers an expensive
+        # re-encode path.
+        command.extend([
+            '--download-sections',
+            f'*{_format_yt_dlp_seconds(request["startTimeSeconds"])}-{_format_yt_dlp_seconds(request["endTimeSeconds"])}',
+            '--output', _build_temp_output_template(request),
+        ])
+    else:
+        command.extend([
+            '--output', _build_full_video_output_template(request),
+        ])
+
     if audio_only:
         command.extend(['-x', '--audio-format', 'mp3'])
-#Eventually can add a user option to change the preset to mp4 here
-    command.extend(['-t', 'mkv'])
+    else:
+        # Eventually can add a user option to change the preset to mp4 here.
+        command.extend(['-t', 'mkv'])
+
     command.append(request['url'])
     return command
 
@@ -296,19 +333,20 @@ def _read_json(path: Path) -> dict[str, Any]:
 def _run_visible_download(job_path: Path) -> int:
     job = _read_json(job_path)
     download_command = job['downloadCommand']
+    request_type = job.get('requestType', 'download-clip')
     result_path = Path(job['resultPath'])
     stdout_path = Path(job['stdoutPath'])
     stderr_path = Path(job['stderrPath'])
 
     combined_output: list[str] = []
-    temp_download_path: Path | None = None
+    downloaded_output_path: Path | None = None
     final_output_path: Path | None = None
-# SET THE WINDOW TITLE HERE
+
     try:
         ctypes.windll.kernel32.SetConsoleTitleW(f"Clip-DL: Downloading {job.get('label', 'Clip')}...")
     except Exception:
-        pass # Fallback if not on Windows
-    
+        pass  # Fallback if not on Windows
+
     def run_and_stream(command: list[str], title: str) -> int:
         logger.info(title)
         logger.debug(f'Command: {" ".join(command)}')
@@ -345,24 +383,31 @@ def _run_visible_download(job_path: Path) -> int:
     download_returncode = run_and_stream(download_command, 'Running yt-dlp download stage in a visible console window')
     if download_returncode == 0:
         logger.info('yt-dlp download stage completed successfully')
-        temp_download_path = _extract_output_path(''.join(combined_output))
-        if temp_download_path:
-            logger.info(f'temp download path: {temp_download_path}')
+        downloaded_output_path = _extract_output_path(''.join(combined_output))
+        if downloaded_output_path:
+            logger.info(f'download output path: {downloaded_output_path}')
     else:
         logger.error(f'yt-dlp download stage failed with return code {download_returncode}')
 
     remux_returncode = 0
-    if download_returncode == 0 and temp_download_path is not None:
-        final_output_path = _derive_final_output_path(temp_download_path)
+    if download_returncode == 0 and request_type == 'download-clip' and downloaded_output_path is not None:
+        final_output_path = _derive_final_output_path(downloaded_output_path)
         audio_only = job.get('audioOnly', False)
-        logger.info(f'Starting ffmpeg remux stage: {temp_download_path} -> {final_output_path}')
-        remux_command = _build_remux_command(temp_download_path, final_output_path, audio_only)
+        logger.info(f'Starting ffmpeg remux stage: {downloaded_output_path} -> {final_output_path}')
+        remux_command = _build_remux_command(downloaded_output_path, final_output_path, audio_only)
         remux_returncode = run_and_stream(remux_command, 'Running ffmpeg remux stage')
         if remux_returncode == 0:
             logger.info(f'ffmpeg remux stage completed successfully: {final_output_path}')
-    elif download_returncode == 0:
+    elif download_returncode == 0 and request_type == 'download-full-video' and downloaded_output_path is not None:
+        final_output_path = downloaded_output_path
+        logger.info(f'Full video download does not require a remux stage: {final_output_path}')
+    elif download_returncode == 0 and request_type == 'download-clip':
         logger.warning('yt-dlp succeeded but could not determine temp download path for ffmpeg remux')
         combined_output.append('clip-dl could not determine the temporary download path for the ffmpeg remux stage.\n')
+        remux_returncode = 1
+    elif download_returncode == 0:
+        logger.warning('yt-dlp succeeded but could not determine the final download path')
+        combined_output.append('clip-dl could not determine the download path produced by yt-dlp.\n')
         remux_returncode = 1
 
     output_text = ''.join(combined_output)
@@ -372,27 +417,28 @@ def _run_visible_download(job_path: Path) -> int:
     overall_returncode = download_returncode if download_returncode != 0 else remux_returncode
     result = {
         'returncode': overall_returncode,
-        'tempDownloadPath': str(temp_download_path) if temp_download_path is not None else None,
+        'downloadType': request_type,
+        'downloadedOutputPath': str(downloaded_output_path) if downloaded_output_path is not None else None,
         'finalOutputPath': str(final_output_path) if final_output_path is not None else None,
     }
     _write_json(result_path, result)
 
     if overall_returncode == 0:
-        logger.info('Clip download completed successfully')
+        logger.info('Download completed successfully')
         print('')
-        print('[clip-dl native host] Clip download completed.')
-        if temp_download_path is not None and temp_download_path.exists():
+        print('[clip-dl native host] Download completed.')
+        if request_type == 'download-clip' and downloaded_output_path is not None and downloaded_output_path.exists():
             try:
-                temp_download_path.unlink()
-                logger.info(f'Removed temp clip: {temp_download_path}')
+                downloaded_output_path.unlink()
+                logger.info(f'Removed temp clip: {downloaded_output_path}')
             except OSError:
-                logger.warning(f'Failed to remove temp clip {temp_download_path}')
-                print(f'[clip-dl native host] Warning: failed to remove temp clip {temp_download_path}')
+                logger.warning(f'Failed to remove temp clip {downloaded_output_path}')
+                print(f'[clip-dl native host] Warning: failed to remove temp clip {downloaded_output_path}')
         time.sleep(2)
     else:
-        logger.error(f'Clip download failed with return code {overall_returncode}')
+        logger.error(f'Download failed with return code {overall_returncode}')
         print('')
-        print('[clip-dl native host] Clip download failed. Leaving this window open briefly so the error is visible.')
+        print('[clip-dl native host] Download failed. Leaving this window open briefly so the error is visible.')
         time.sleep(8)
 
     return overall_returncode
@@ -408,6 +454,7 @@ def _run_command_with_visible_progress(download_command: list[str], request: dic
 
         _write_json(job_path, {
             'downloadCommand': download_command,
+            'requestType': request['type'],
             'resultPath': str(result_path),
             'stdoutPath': str(stdout_path),
             'stderrPath': str(stderr_path),
@@ -545,7 +592,10 @@ def main() -> int:
             _write_native_message(missing_tool_error)
             return 0
 
-    logger.info(f'Processing download-clip request: url={request["url"]}, label={request["label"]}, start={request["startTimeSeconds"]}, end={request["endTimeSeconds"]}')
+    if request['type'] == 'download-clip':
+        logger.info(f'Processing download-clip request: url={request["url"]}, label={request["label"]}, start={request["startTimeSeconds"]}, end={request["endTimeSeconds"]}')
+    else:
+        logger.info(f'Processing download-full-video request: url={request["url"]}, label={request["label"]}')
 
     try:
         with _single_download_lock():
@@ -554,7 +604,7 @@ def main() -> int:
             completed_process = _run_command_with_visible_progress(download_command, request)
     except RuntimeError as error:
         if str(error) == 'busy':
-            logger.warning('Another clip download is already running (busy lock)')
+            logger.warning('Another download is already running (busy lock)')
             _write_native_message(_error_response('busy', 'Another clip download is already running.'))
             return 0
         raise
@@ -578,20 +628,29 @@ def main() -> int:
 
     output_path = getattr(completed_process, 'resolved_final_output_path', None)
     if output_path is None or not output_path.exists():
-        logger.error('ffmpeg finished but the final output file was not found')
-        _write_native_message(_error_response('download-failed', 'ffmpeg finished but the final output file was not found.'))
+        logger.error('Download finished but the final output file was not found')
+        _write_native_message(_error_response('download-failed', 'Download finished but the output file was not found.'))
         return 0
 
     logger.info(f'Download completed successfully: {output_path}')
-    _write_native_message({
-        'ok': True,
-        'outputPath': str(output_path),
-        'fileName': output_path.name,
-        'clipRange': {
-            'startTimeSeconds': request['startTimeSeconds'],
-            'endTimeSeconds': request['endTimeSeconds'],
-        },
-    })
+    if request['type'] == 'download-clip':
+        _write_native_message({
+            'ok': True,
+            'downloadType': 'clip',
+            'outputPath': str(output_path),
+            'fileName': output_path.name,
+            'clipRange': {
+                'startTimeSeconds': request['startTimeSeconds'],
+                'endTimeSeconds': request['endTimeSeconds'],
+            },
+        })
+    else:
+        _write_native_message({
+            'ok': True,
+            'downloadType': 'full-video',
+            'outputPath': str(output_path),
+            'fileName': output_path.name,
+        })
     return 0
 
 

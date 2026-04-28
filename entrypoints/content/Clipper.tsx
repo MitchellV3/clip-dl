@@ -9,7 +9,12 @@ import './style.css'
 const clipDownloader = createProxyService(CLIP_DOWNLOADER_KEY)
 const PAGE_DEBUG_EVENT = '__clip_dl_native_debug__'
 const FORMAT_PLACEHOLDER_MESSAGE = 'Format selection is not implemented in this first host-backed version.'
-const V1_NOT_IMPLEMENTED_MESSAGE = 'This control is still visible for layout work, but only the preset duration buttons are implemented right now.'
+const CUSTOM_CLIP_LABEL = 'Custom Clip'
+type TimeSelectionStatus = ClipTimeSelection['timeSelectionStatus']
+type ResolvedClipRange = {
+  startTimeSeconds: number
+  endTimeSeconds: number
+}
 
 function emitPageDebugLog(payload: unknown) {
   window.postMessage({
@@ -21,15 +26,6 @@ function emitPageDebugLog(payload: unknown) {
 
 function getActiveVideoElement() {
   return document.querySelector('video.html5-main-video, video.video-player__video, video[playsinline]') as HTMLVideoElement | null
-}
-
-function showNotImplementedToast(controlName: string) {
-  toaster.create({
-    title: 'Not implemented yet',
-    description: `${controlName}: ${V1_NOT_IMPLEMENTED_MESSAGE}`,
-    duration: 5000,
-    closable: true,
-  })
 }
 
 function formatSecondsForYtDlp(seconds: number) {
@@ -106,19 +102,16 @@ function renderTimelinePreviewOverlay(startSeconds: number, endSeconds: number) 
   overlay.style.width = `${widthPercent}%`
 }
 
-// Shared state for window.clip_* interop. The current v1 only wires duration
-// buttons to the native host, but we keep these globals documented here because
-// other content-side code already expects them to exist.
-
+// Shared state for window.clip_* interop.
 //TODO: Eventually we will let the user go into the extension settings and configure the default options here, such as default clip duration, whether to default to audio-only mode, default quality format, etc.
-
 const clipState = {
   audioOnly: false,
   startTime: null as number | null,
   endTime: null as number | null,
-  timeSelectionStatus: 'none' as 'none' | 'start_set' | 'end_set' | 'both_set',
+  timeSelectionStatus: 'none' as TimeSelectionStatus,
   qualityFormats: [] as { label: string; value: string }[],
 }
+
 const clipDurations = [
   { label: '10 seconds', seconds: 10 },
   { label: '30 seconds', seconds: 30 },
@@ -129,12 +122,96 @@ const clipDurations = [
   { label: 'Full Video', seconds: -1 },
 ]
 
+function getTimeSelectionStatus(startTime: number | null, endTime: number | null): TimeSelectionStatus {
+  if (startTime !== null && endTime !== null) {
+    return 'both_set'
+  }
+  if (startTime !== null) {
+    return 'start_set'
+  }
+  if (endTime !== null) {
+    return 'end_set'
+  }
+  return 'none'
+}
+
+function setClipTimeSelection(startTime: number | null, endTime: number | null) {
+  clipState.startTime = startTime
+  clipState.endTime = endTime
+  clipState.timeSelectionStatus = getTimeSelectionStatus(startTime, endTime)
+}
+
+function getClipTimeSelection(): ClipTimeSelection {
+  return {
+    audioOnly: clipState.audioOnly,
+    startTime: clipState.startTime,
+    endTime: clipState.endTime,
+    timeSelectionStatus: clipState.timeSelectionStatus,
+  }
+}
+
+function applyStartTimeSelection(time: number): ClipTimeSelection {
+  const nextStartTime = Number(time.toFixed(3))
+  const nextEndTime = clipState.endTime !== null && clipState.endTime > nextStartTime
+    ? clipState.endTime
+    : null
+
+  setClipTimeSelection(nextStartTime, nextEndTime)
+  return getClipTimeSelection()
+}
+
+function applyEndTimeSelection(time: number): ClipTimeSelection {
+  const nextEndTime = Number(time.toFixed(3))
+  const nextStartTime = clipState.startTime !== null && clipState.startTime < nextEndTime
+    ? clipState.startTime
+    : null
+
+  setClipTimeSelection(nextStartTime, nextEndTime)
+  return getClipTimeSelection()
+}
+
+function clearClipTimeSelection(): ClipTimeSelection {
+  setClipTimeSelection(null, null)
+  return getClipTimeSelection()
+}
+
+function resolveSelectedClipRange(selection: ClipTimeSelection): ResolvedClipRange | null {
+  if (selection.endTime === null) {
+    return null
+  }
+
+  if (selection.startTime === null) {
+    return {
+      startTimeSeconds: 0,
+      endTimeSeconds: selection.endTime,
+    }
+  }
+
+  if (selection.endTime <= selection.startTime) {
+    return null
+  }
+
+  return {
+    startTimeSeconds: selection.startTime,
+    endTimeSeconds: selection.endTime,
+  }
+}
+
+function syncTimeSelectionPreview(selection: ClipTimeSelection) {
+  const resolvedRange = resolveSelectedClipRange(selection)
+  if (!resolvedRange || selection.timeSelectionStatus === 'start_set') {
+    clearTimelinePreviewOverlay()
+    return
+  }
+
+  renderTimelinePreviewOverlay(resolvedRange.startTimeSeconds, resolvedRange.endTimeSeconds)
+}
+
 // Audio-only toggle sub-component
 function AudioOnlyToggle() {
   const [active, setActive] = useState(clipState.audioOnly)
 
   function handleClick() {
-    console.log('Toggling audio-only mode. Current state:', active)
     const newValue = !active
     setActive(newValue)
     clipState.audioOnly = newValue
@@ -143,7 +220,6 @@ function AudioOnlyToggle() {
   return (
     <Box
       borderBottom={'1px solid rgba(255,255,255,0.15)'}
-      //margin={'0 -8px 0px'}
       padding={'4px 2px 4px'}
     >
       <Button
@@ -155,7 +231,6 @@ function AudioOnlyToggle() {
         backgroundColor={'transparent'}
         color={'#e2e2e2'}
         border={'none'}
-        //padding={'8px 12px'}
         cursor={'pointer'}
         fontSize={'12px'}
         textAlign={'left'}
@@ -198,14 +273,11 @@ function QualitySelector({ formats, loading, error }: { formats: { label: string
   return (
     <Box
       borderBottom={'1px solid rgba(255, 255, 255, 0.15)'}
-    //margin={'0 -8px 8px'}
-    //padding={'0 8px 8px'}
-    //backgroundColor={'rgba(255, 255, 255, 0.03)'}
     >
       <Box
-        display={"flex"}
-        flexDirection={"column"}
-        gap={"4px"}
+        display={'flex'}
+        flexDirection={'column'}
+        gap={'4px'}
       >
         <Box
           color={'#e2e2e2'}
@@ -217,9 +289,8 @@ function QualitySelector({ formats, loading, error }: { formats: { label: string
           Video Quality
         </Box>
         <NativeSelect.Root
-          size={"lg"}
+          size={'lg'}
           padding={'8px 12px 8px'}
-        //margin={'0 12px 8px'}
         >
           <NativeSelect.Field
             placeholder="Select quality"
@@ -228,52 +299,44 @@ function QualitySelector({ formats, loading, error }: { formats: { label: string
             border={'1px solid rgba(255, 255, 255, 0.2)'}
             borderRadius={'4px'}
             cursor={'pointer'}
-            //padding={'12px 16px'}
             fontSize={'12px'}
-            //margin={'12px 16px'}
             outline={'none'}
-            //disabled={loading || !!error || formats.length === 0}
             width={'calc(100% - 24px)'}
             transition={'all 0.2s ease'}
             padding='16px 12px'
           >
-            {loading &&
-              <option
-                value=""
-              >
+            {loading && (
+              <option value="">
                 Loading formats...
               </option>
-            }
-            {error &&
+            )}
+            {error && (
               <option
                 value=""
                 style={{ color: '#ef4444' }}
               >
                 {error}
               </option>
-            }
-            {!loading &&
-              !error &&
-              formats.length === 0 &&
+            )}
+            {!loading && !error && formats.length === 0 && (
               <option
                 value=""
                 style={{ color: '#ef4444' }}
               >
                 No formats detected
               </option>
-            }
+            )}
             {formats.map((fmt) => (
               <option key={fmt.value} value={fmt.value}>{fmt.label}</option>
             ))}
           </NativeSelect.Field>
-          <NativeSelect.Indicator marginRight={"42px"} />
+          <NativeSelect.Indicator marginRight={'42px'} />
         </NativeSelect.Root>
       </Box>
     </Box>
   )
 }
 
-//TODO: The 'Full Video' option is currently not-yet-implemented and needs to be wired to the native host. When the user clicks the 'Full Video' button, we do not need to send a duration to the native host, just passing the URL to yt-dlp will download the full thing. This also means we can likely skip the ffmpeg remuxing step for keyframe issues, since we will have downloaded the video in its entirety. 
 function DurationButtons({
   isDownloading,
   onDownload,
@@ -311,15 +374,15 @@ function DurationButtons({
 
   function handleDurationButtonHoverLeave(e: React.MouseEvent) {
     e.stopPropagation()
-    clearTimelinePreviewOverlay()
+    syncTimeSelectionPreview(getClipTimeSelection())
   }
 
   return (
     <Box
-      display={"grid"}
+      display={'grid'}
       gridTemplateColumns={'repeat(2, 1fr)'}
       gap={'0px 8px'}
-      padding={"0px 12px 0px"}
+      padding={'0px 12px 0px'}
     >
       {clipDurations.map((duration) => {
         const isFullVideo = duration.seconds === -1
@@ -356,168 +419,115 @@ function DurationButtons({
   )
 }
 
-// Time selection sub-component
-function TimeSelection() {
-  const [status, setStatus] = useState<'none' | 'start_set' | 'end_set' | 'both_set'>('none')
-
-  const updateStatus = useCallback(() => {
-    if (window.clip_getTimeSelection) {
-      const selection = window.clip_getTimeSelection()
-      if (selection) {
-        setStatus(selection.timeSelectionStatus)
-      }
-    }
-  }, [])
-
-  useEffect(() => {
-    updateStatus()
-  }, [updateStatus])
-
-  //TODO: Implement startTime and endTime and wire them up to the native host so they can be used in clip download requests. 
-  // The general flow for these buttons is: 
-  // - The user clicks the "set start time" button, we record that time as the start time of the clip, and then wait for the user to click the "set end time" button. The entire time selection will be visualized with an overlay on the video timeline. If the user clicks "set start time" again, we update the start time to the new time. If the user clicks "set end time" before setting a start time, we can set the end time and just treat the start time as 0. If the user clicks "cancel selection", we clear both start and end times and remove the timeline overlay. If the user clicks "download clip" with a valid time selection, we send those times to the native host to be used in the yt-dlp download request.
-  function handleSetStart() {
-    console.log('Setting start time for clip')
-    const videoElement = document.querySelector('video.html5-main-video, video.video-player__video, video[playsinline]') as HTMLVideoElement | null
-    if (videoElement) {
-      if (window.clip_setStartTime) window.clip_setStartTime(videoElement.currentTime)
-      if (window.clip_showTimelinePreview) window.clip_showTimelinePreview(videoElement.currentTime, videoElement.currentTime)
-      updateStatus()
-    }
-    console.log('Start time set. Current time selection status:', status)
-    console.log('Current clipState:', {
-      startTime: clipState.startTime,
-      endTime: clipState.endTime,
-      audioOnly: clipState.audioOnly,
-    })
-  }
-
-  function handleSetEnd() {
-    console.log('Setting end time for clip')
-    const videoElement = document.querySelector('video.html5-main-video, video.video-player__video, video[playsinline]') as HTMLVideoElement | null
-    if (videoElement) {
-      if (window.clip_setEndTime) window.clip_setEndTime(videoElement.currentTime)
-      if (window.clip_showTimelinePreview) window.clip_showTimelinePreview(videoElement.currentTime, videoElement.currentTime)
-      updateStatus()
-    }
-    console.log('End time set. Current time selection status:', status)
-    console.log('Current clipState:', {
-      startTime: clipState.startTime,
-      endTime: clipState.endTime,
-      audioOnly: clipState.audioOnly,
-    })
-  }
-
-  function handleDownload() {
-    console.log('Download clip with settings:', {
-      audioOnly: clipState.audioOnly,
-      startTime: clipState.startTime,
-      endTime: clipState.endTime,
-    })
-    if (window.clip_handleCustomClipDownload) {
-      const start = clipState.startTime || 0
-      const duration = (clipState.endTime && clipState.startTime) ? (clipState.endTime - clipState.startTime) : -1
-      window.clip_handleCustomClipDownload(duration, start)
-    }
-  }
-
-  function handleCancel() {
-    if (window.clip_clearTimeSelection) window.clip_clearTimeSelection()
-    setStatus('none')
-  }
-  function handleUnavailableControl(controlName: string) {
-    setStatus('none')
-    showNotImplementedToast(controlName)
-  }
-  const showCancel = status === 'start_set' || status === 'end_set' || status === 'both_set'
-  const showDownload = status === 'both_set'
+function TimeSelection({
+  status,
+  isDownloading,
+  onSetStart,
+  onSetEnd,
+  onCancel,
+  onDownload,
+}: {
+  status: TimeSelectionStatus
+  isDownloading: boolean
+  onSetStart: () => void
+  onSetEnd: () => void
+  onCancel: () => void
+  onDownload: () => void
+}) {
+  const showCancel = status !== 'none'
+  const showDownload = status === 'end_set' || status === 'both_set'
 
   return (
     <Box
-      //borderBottom={'1px solid rgba(255,255,255,0.15)'}
       margin={'0 -8px 0'}
       padding={'0 8px 0'}
     >
       <Box
-        color={"#e2e2e2"}
-        fontSize={"13px"}
-        padding={"8px 12px 4px"}
+        color={'#e2e2e2'}
+        fontSize={'13px'}
+        padding={'8px 12px 4px'}
         opacity={0.9}
         fontWeight={500}
       >
         Time Selection
       </Box>
       <Box
-        display={"grid"}
-        gridTemplateColumns={"repeat(2, 1fr)"}
-        gap={"8px"}
-        padding={"4px 12px"}
-        overflow={"hidden"}
+        display={'grid'}
+        gridTemplateColumns={'repeat(2, 1fr)'}
+        gap={'8px'}
+        padding={'4px 12px'}
+        overflow={'hidden'}
       >
         <Button
-          onClick={() => handleUnavailableControl('Set Start Time')}
+          onClick={onSetStart}
+          disabled={isDownloading}
           backgroundColor={'rgba(74, 222, 128, 0.2)'}
           color={'#4ade80'}
-          border={"1px solid rgba(74, 222, 128, 0.3)"}
+          border={'1px solid rgba(74, 222, 128, 0.3)'}
           padding={'16px 12px'}
           borderRadius={'4px'}
-          cursor={'pointer'}
+          cursor={isDownloading ? 'progress' : 'pointer'}
           fontSize={'12px'}
           fontWeight={'600'}
           transition={'all 0.2s ease'}
-          overflow={"hidden"}
-          wordBreak={"break-word"}
-          whiteSpace={"normal"}
+          overflow={'hidden'}
+          wordBreak={'break-word'}
+          whiteSpace={'normal'}
+          opacity={isDownloading ? 0.6 : 1}
           _hover={{ backgroundColor: 'rgba(74, 222, 128, 0.3)' }}
         >
           <Text
-            wordBreak={"break-word"}
-            width={"100%"}
-            height={"fit-content"}
+            wordBreak={'break-word'}
+            width={'100%'}
+            height={'fit-content'}
           >
             Set Start Time
           </Text>
         </Button>
         <Button
-          onClick={() => handleUnavailableControl('Set End Time')}
+          onClick={onSetEnd}
+          disabled={isDownloading}
           backgroundColor={'rgba(74, 222, 128, 0.2)'}
           color={'#4ade80'}
-          border={"1px solid rgba(74, 222, 128, 0.3)"}
+          border={'1px solid rgba(74, 222, 128, 0.3)'}
           padding={'16px 12px'}
           borderRadius={'4px'}
-          cursor={'pointer'}
+          cursor={isDownloading ? 'progress' : 'pointer'}
           fontSize={'12px'}
           fontWeight={'600'}
           transition={'all 0.2s ease'}
-          overflow={"hidden"}
-          wordBreak={"break-word"}
-          whiteSpace={"normal"}
+          overflow={'hidden'}
+          wordBreak={'break-word'}
+          whiteSpace={'normal'}
+          opacity={isDownloading ? 0.6 : 1}
           _hover={{ backgroundColor: 'rgba(74, 222, 128, 0.3)' }}
         >
           <Text
-            wordBreak={"break-word"}
-            width={"100%"}
-            height={"fit-content"}
+            wordBreak={'break-word'}
+            width={'100%'}
+            height={'fit-content'}
           >
             Set End Time
           </Text>
         </Button>
         {showCancel && (
           <Button
-            onClick={() => handleUnavailableControl('Cancel Selection')}
+            onClick={onCancel}
+            disabled={isDownloading}
             backgroundColor={'rgba(239, 68, 68, 0.2)'}
             color={'#ef4444'}
-            border={"1px solid rgba(239, 68, 68, 0.3)"}
+            border={'1px solid rgba(239, 68, 68, 0.3)'}
             padding={'16px 12px'}
             borderRadius={'4px'}
-            cursor={'pointer'}
+            cursor={isDownloading ? 'progress' : 'pointer'}
             fontSize={'12px'}
             fontWeight={'600'}
             transition={'all 0.2s ease'}
-            overflow={"hidden"}
-            wordBreak={"break-word"}
-            whiteSpace={"normal"}
+            overflow={'hidden'}
+            wordBreak={'break-word'}
+            whiteSpace={'normal'}
             gridColumn={'1 / -1'}
+            opacity={isDownloading ? 0.6 : 1}
             _hover={{ backgroundColor: 'rgba(239, 68, 68, 0.3)' }}
           >
             Cancel Selection
@@ -525,24 +535,25 @@ function TimeSelection() {
         )}
         {showDownload && (
           <Button
-            onClick={() => handleUnavailableControl('Download Clip')}
+            onClick={onDownload}
+            disabled={isDownloading}
             backgroundColor={'#4ade80'}
             color={'#1a1a1a'}
-            border={"none"}
+            border={'none'}
             padding={'16px 12px'}
             borderRadius={'4px'}
-            cursor={'pointer'}
+            cursor={isDownloading ? 'progress' : 'pointer'}
             fontSize={'12px'}
             fontWeight={'600'}
             transition={'all 0.2s ease'}
-            overflow={"hidden"}
-            wordBreak={"break-word"}
-            whiteSpace={"normal"}
+            overflow={'hidden'}
+            wordBreak={'break-word'}
+            whiteSpace={'normal'}
             gridColumn={'1 / -1'}
+            opacity={isDownloading ? 0.6 : 1}
             _hover={{
-              backgroundColor: '#22c55e'
+              backgroundColor: '#22c55e',
             }}
-
           >
             Download Clip
           </Button>
@@ -552,7 +563,6 @@ function TimeSelection() {
   )
 }
 
-// Toggle button SVG icon
 const ClipIcon = () => (
   <svg filter="drop-shadow(0 0 1px rgba(0, 0, 0, .8))" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#ffffff"
     style={{
@@ -572,6 +582,7 @@ export default function Clipper() {
   const [loadingFormats, setLoadingFormats] = useState(false)
   const [formatError, setFormatError] = useState<string | null>(null)
   const [isDownloading, setIsDownloading] = useState(false)
+  const [timeSelection, setTimeSelection] = useState<ClipTimeSelection>(() => getClipTimeSelection())
 
   useEffect(() => {
     const scriptId = 'clip-dl-page-console-bridge'
@@ -610,6 +621,15 @@ export default function Clipper() {
     }
   }, [isOpen])
 
+  useEffect(() => {
+    if (!isOpen) {
+      clearTimelinePreviewOverlay()
+      return
+    }
+
+    syncTimeSelectionPreview(timeSelection)
+  }, [isOpen, timeSelection])
+
   const handleToggle = useCallback((event: React.MouseEvent) => {
     event.stopPropagation()
 
@@ -621,71 +641,73 @@ export default function Clipper() {
     setIsOpen((previous) => !previous)
   }, [])
 
-  const handleDurationDownload = useCallback(async (seconds: number, label: string) => {
+  const openFileLocation = useCallback(async (result: Extract<ClipDownloadResult, { ok: true }>) => {
+    if (!result.outputPath) {
+      return
+    }
+
+    try {
+      const opened = await clipDownloader.showDownloadedClipInFolder(result.outputPath)
+      if (!opened) {
+        toaster.error({
+          title: 'File not found',
+          description: 'Could not find the downloaded clip in the selected folder.',
+          duration: 5000,
+          closable: true,
+        })
+      }
+    } catch {
+      toaster.error({
+        title: 'Folder access denied',
+        description: 'Cannot access the folder to show the downloaded clip.',
+        duration: 5000,
+        closable: true,
+      })
+    }
+  }, [])
+
+  //TODO: Add ability to queue downloads instead of disabling the UI while a download is in progress.
+  const runDownloadRequest = useCallback(async (request: ClipDownloadRequest) => {
     if (isDownloading) {
       toaster.create({
         title: 'Download already running',
         description: 'Wait for the active clip download to finish before starting another one.',
         duration: 4000,
         closable: true,
-
       })
       return
-    }
-
-    if (seconds === -1) {
-      showNotImplementedToast('Full Video')
-      return
-    }
-
-    const videoElement = getActiveVideoElement()
-    if (!videoElement) {
-      toaster.create({
-        title: 'Video not found',
-        description: 'clip-dl could not find the active YouTube video element on this page.',
-        duration: 5000,
-        closable: true,
-      })
-      return
-    }
-
-    const endTimeSeconds = Number(videoElement.currentTime.toFixed(3))
-    const startTimeSeconds = Number(Math.max(endTimeSeconds - seconds, 0).toFixed(3))
-
-    const request: ClipDownloadRequest = {
-      type: 'download-clip',
-      url: window.location.href,
-      startTimeSeconds,
-      endTimeSeconds,
-      label,
-      audioOnly: clipState.audioOnly,
     }
 
     const loadingToastId = `clip-download-${Date.now()}`
+    const loadingTitle = request.type === 'download-full-video'
+      ? `Downloading ${request.audioOnly ? 'audio' : 'full video'}`
+      : 'Downloading clip'
+    const loadingDescription = request.type === 'download-full-video'
+      ? `Saving the full ${request.audioOnly ? 'audio track' : 'video'} to Downloads. A progress window was opened on the desktop.`
+      : `Saving clip from ${formatTimeDisplay(request.startTimeSeconds)} to ${formatTimeDisplay(request.endTimeSeconds)}. A progress window was opened on the desktop.`
 
     emitPageDebugLog({
-      stage: 'clip-download-requested',
-      request: {
-        ...request,
-        startTimeSeconds: formatSecondsForYtDlp(request.startTimeSeconds),
-        endTimeSeconds: formatSecondsForYtDlp(request.endTimeSeconds),
-      },
+      stage: 'native-download-requested',
+      request: request.type === 'download-clip'
+        ? {
+          ...request,
+          startTimeSeconds: formatSecondsForYtDlp(request.startTimeSeconds),
+          endTimeSeconds: formatSecondsForYtDlp(request.endTimeSeconds),
+        }
+        : request,
     })
 
     setIsDownloading(true)
     toaster.loading({
       id: loadingToastId,
-      title: 'Downloading clip',
-      description: `Saving clip from ${formatTimeDisplay(startTimeSeconds)} to ${formatTimeDisplay(endTimeSeconds)}. A progress window was opened on the desktop.`,
+      title: loadingTitle,
+      description: loadingDescription,
       closable: true,
     })
 
     let result: ClipDownloadResult | null = null
 
     try {
-      // Content scripts cannot talk to native hosts directly. This proxy call
-      // hops into the background script, which then forwards the request to the
-      // Python host with browser.runtime.sendNativeMessage.
       result = await clipDownloader.downloadClip(request)
     } catch (error) {
       result = {
@@ -698,33 +720,7 @@ export default function Clipper() {
       toaster.dismiss(loadingToastId)
     }
 
-    emitPageDebugLog({ stage: 'clip-download-result', result })
-
-    async function openFileLocation(result: Extract<ClipDownloadResult, { ok: true }>) {
-      if (result && result.outputPath) {
-        try {
-          const opened = await clipDownloader.showDownloadedClipInFolder(result.outputPath)
-          console.log('Explorer open result:', opened)
-          console.log('Expected path:', result.outputPath)
-          if (!opened) {
-            toaster.error({
-              title: 'File not found',
-              description: 'Could not find the downloaded clip in the selected folder.',
-              duration: 5000,
-              closable: true,
-            })
-          }
-        } catch {
-          toaster.error({
-            title: 'Folder access denied',
-            description: 'Cannot access the folder to show the downloaded clip.',
-            duration: 5000,
-            closable: true,
-          })
-        }
-      }
-
-    }
+    emitPageDebugLog({ stage: 'native-download-result', result })
 
     if (result.ok) {
       toaster.success({
@@ -743,39 +739,127 @@ export default function Clipper() {
     }
 
     toaster.error({
-      title: 'Clip download failed',
+      title: request.type === 'download-full-video' ? 'Full video download failed' : 'Clip download failed',
       description: result.message,
       duration: 10000,
       closable: true,
     })
-  }, [isDownloading])
+  }, [isDownloading, openFileLocation])
+
+  const handleDurationDownload = useCallback(async (seconds: number, label: string) => {
+    if (seconds === -1) {
+      await runDownloadRequest({
+        type: 'download-full-video',
+        url: window.location.href,
+        label,
+        audioOnly: clipState.audioOnly,
+      })
+      return
+    }
+
+    const videoElement = getActiveVideoElement()
+    if (!videoElement) {
+      toaster.create({
+        title: 'Video not found',
+        description: 'clip-dl could not find the active YouTube video element on this page.',
+        duration: 5000,
+        closable: true,
+      })
+      return
+    }
+
+    const endTimeSeconds = Number(videoElement.currentTime.toFixed(3))
+    const startTimeSeconds = Number(Math.max(endTimeSeconds - seconds, 0).toFixed(3))
+
+    await runDownloadRequest({
+      type: 'download-clip',
+      url: window.location.href,
+      startTimeSeconds,
+      endTimeSeconds,
+      label,
+      audioOnly: clipState.audioOnly,
+    })
+  }, [runDownloadRequest])
+
+  const handleSetStartTime = useCallback(() => {
+    const videoElement = getActiveVideoElement()
+    if (!videoElement) {
+      toaster.create({
+        title: 'Video not found',
+        description: 'clip-dl could not find the active YouTube video element on this page.',
+        duration: 5000,
+        closable: true,
+      })
+      return
+    }
+
+    const nextSelection = applyStartTimeSelection(videoElement.currentTime)
+    setTimeSelection(nextSelection)
+    emitPageDebugLog({ stage: 'time-selection-updated', source: 'set-start-time', selection: nextSelection })
+  }, [])
+
+  const handleSetEndTime = useCallback(() => {
+    const videoElement = getActiveVideoElement()
+    if (!videoElement) {
+      toaster.create({
+        title: 'Video not found',
+        description: 'clip-dl could not find the active YouTube video element on this page.',
+        duration: 5000,
+        closable: true,
+      })
+      return
+    }
+
+    const nextSelection = applyEndTimeSelection(videoElement.currentTime)
+    setTimeSelection(nextSelection)
+    emitPageDebugLog({ stage: 'time-selection-updated', source: 'set-end-time', selection: nextSelection })
+  }, [])
+
+  const handleCancelTimeSelection = useCallback(() => {
+    const nextSelection = clearClipTimeSelection()
+    setTimeSelection(nextSelection)
+    clearTimelinePreviewOverlay()
+    emitPageDebugLog({ stage: 'time-selection-cleared' })
+  }, [])
+
+  const handleCustomClipDownload = useCallback(async () => {
+    const selection = getClipTimeSelection()
+    const resolvedRange = resolveSelectedClipRange(selection)
+
+    if (!resolvedRange) {
+      toaster.create({
+        title: 'Invalid selection',
+        description: 'Set an end time, or both start and end times, before downloading a custom clip.',
+        duration: 5000,
+        closable: true,
+      })
+      return
+    }
+
+    await runDownloadRequest({
+      type: 'download-clip',
+      url: window.location.href,
+      startTimeSeconds: resolvedRange.startTimeSeconds,
+      endTimeSeconds: resolvedRange.endTimeSeconds,
+      label: CUSTOM_CLIP_LABEL,
+      audioOnly: clipState.audioOnly,
+    })
+  }, [runDownloadRequest])
 
   useEffect(() => {
-    // These globals preserve the current content-script integration points.
-    // They intentionally do less in v1 so unfinished controls stay visible
-    // without claiming to support full clipping workflows yet.
     window.clip_getAudioOnly = () => clipState.audioOnly
     window.clip_setAudioOnly = (value: boolean) => { clipState.audioOnly = value }
     window.clip_getStartTime = () => clipState.startTime
     window.clip_setStartTime = (time: number) => {
-      clipState.startTime = time
-      clipState.timeSelectionStatus = 'start_set'
+      setTimeSelection(applyStartTimeSelection(time))
     }
     window.clip_getEndTime = () => clipState.endTime
     window.clip_setEndTime = (time: number) => {
-      clipState.endTime = time
-      clipState.timeSelectionStatus = 'end_set'
+      setTimeSelection(applyEndTimeSelection(time))
     }
-    window.clip_getTimeSelection = () => ({
-      audioOnly: clipState.audioOnly,
-      startTime: clipState.startTime,
-      endTime: clipState.endTime,
-      timeSelectionStatus: clipState.timeSelectionStatus,
-    })
+    window.clip_getTimeSelection = () => getClipTimeSelection()
     window.clip_clearTimeSelection = () => {
-      clipState.startTime = null
-      clipState.endTime = null
-      clipState.timeSelectionStatus = 'none'
+      setTimeSelection(clearClipTimeSelection())
     }
     window.clip_toggleClipMenu = (event: MouseEvent) => {
       if (event) event.stopPropagation()
@@ -795,9 +879,6 @@ export default function Clipper() {
     window.clip_isExtensionContextValid = () => true
     window.clip_handleInvalidContext = () => { }
     window.clip_handleClipOptionClick = (_event: MouseEvent) => { }
-    window.clip_handleCustomClipDownload = (_seconds: number, _startTime: number | null) => {
-      showNotImplementedToast('Custom clip download')
-    }
   }, [])
 
   return (
@@ -812,17 +893,16 @@ export default function Clipper() {
         <Button
           className={'ytp-button'}
           onClick={handleToggle}
-          display={"flex"}
-          alignItems={"center"}
-          justifyContent={"center"}
-          overflow={"visible"}
+          display={'flex'}
+          alignItems={'center'}
+          justifyContent={'center'}
+          overflow={'visible'}
         >
           <Bleed
-            //padding={"1px"}
-            display={"flex"}
-            alignItems={"center"}
-            justifyContent={"center"}
-            padding={"0"}
+            display={'flex'}
+            alignItems={'center'}
+            justifyContent={'center'}
+            padding={'0'}
           >
             <ClipIcon />
           </Bleed>
@@ -837,22 +917,29 @@ export default function Clipper() {
           p={8}
           m={4}
           minW="200px"
-          minH={"100px"}
+          minH={'100px'}
           fontSize="12px"
           backdropFilter="blur(8px)"
           border="1px solid rgba(255, 255, 255, 0.2)"
           transformOrigin={'bottom center'}
-          zIndex={"99999"}
-          overflow={"hidden"}
-          overflowX={"hidden"}
+          zIndex={'99999'}
+          overflow={'hidden'}
+          overflowX={'hidden'}
         >
           <Popover.Arrow />
-          <Popover.Body >
-            <Box display={"flex"} flexDirection={"column"} gap={2} width={"full"}>
+          <Popover.Body>
+            <Box display={'flex'} flexDirection={'column'} gap={2} width={'full'}>
               <AudioOnlyToggle />
               <QualitySelector formats={qualityFormats} loading={loadingFormats} error={formatError} />
               <DurationButtons isDownloading={isDownloading} onDownload={handleDurationDownload} />
-              <TimeSelection />
+              <TimeSelection
+                status={timeSelection.timeSelectionStatus}
+                isDownloading={isDownloading}
+                onSetStart={handleSetStartTime}
+                onSetEnd={handleSetEndTime}
+                onCancel={handleCancelTimeSelection}
+                onDownload={() => void handleCustomClipDownload()}
+              />
             </Box>
           </Popover.Body>
         </Popover.Content>

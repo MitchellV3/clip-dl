@@ -1,6 +1,6 @@
 const NATIVE_HOST_NAME = 'com.clip_dl.clip_downloader'
 
-export interface ClipDownloadRequest {
+export interface ClipRangeDownloadRequest {
     type: 'download-clip'
     url: string
     startTimeSeconds: number
@@ -9,14 +9,24 @@ export interface ClipDownloadRequest {
     audioOnly?: boolean
 }
 
+export interface FullVideoDownloadRequest {
+    type: 'download-full-video'
+    url: string
+    label: string
+    audioOnly?: boolean
+}
+
+export type ClipDownloadRequest = ClipRangeDownloadRequest | FullVideoDownloadRequest
+
 export interface ShowDownloadedClipInFolderRequest {
     type: 'show-downloaded-clip-in-folder'
     outputPath: string
     highlightFile?: boolean
 }
 
-export interface SuccessfulClipDownloadResult {
+export interface SuccessfulClipRangeDownloadResult {
     ok: true
+    downloadType: 'clip'
     outputPath: string
     fileName: string
     clipRange: {
@@ -25,13 +35,23 @@ export interface SuccessfulClipDownloadResult {
     }
 }
 
+export interface SuccessfulFullVideoDownloadResult {
+    ok: true
+    downloadType: 'full-video'
+    outputPath: string
+    fileName: string
+}
+
 export interface FailedClipDownloadResult {
     ok: false
     code: 'busy' | 'native-host-unavailable' | 'missing-tool' | 'download-failed' | 'bad-request'
     message: string
 }
 
-export type ClipDownloadResult = SuccessfulClipDownloadResult | FailedClipDownloadResult
+export type ClipDownloadResult =
+    | SuccessfulClipRangeDownloadResult
+    | SuccessfulFullVideoDownloadResult
+    | FailedClipDownloadResult
 
 function normalizeNativeError(error: unknown): FailedClipDownloadResult {
     const errorText = String(error)

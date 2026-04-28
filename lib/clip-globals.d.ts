@@ -37,5 +37,4 @@ interface Window {
   clip_isExtensionContextValid: () => boolean
   clip_handleInvalidContext: () => void
   clip_handleClipOptionClick: (e: MouseEvent) => void
-  clip_handleCustomClipDownload: (seconds: number, startTime: number | null) => void
 }
