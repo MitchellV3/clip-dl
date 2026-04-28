@@ -268,7 +268,7 @@ function AudioOnlyToggle() {
 }
 
 // Quality selector sub-component
-//TODO: Implement the quality selector. The formats will either need to be fetched directly from the YouTube page's quality options or requested from the native host using yt-dlp's format detection. The dropdown is then asynchronously populated from that list of quality options. The user should be able to select a quality format from the dropdown, and that format should be sent to the native host to be used in the yt-dlp download request. We should also handle the case where no formats are available or an error occurs while fetching formats, and display an appropriate message in the dropdown.
+//TODO: Implement the quality selector. Should default to the highest available quality. The formats will either need to be fetched directly from the YouTube page's quality options or requested from the native host using yt-dlp's format detection. The dropdown is then asynchronously populated from that list of quality options. The user should be able to select a quality format from the dropdown, and that format should be sent to the native host to be used in the yt-dlp download request. We should also handle the case where no formats are available or an error occurs while fetching formats, and display an appropriate message in the dropdown.
 function QualitySelector({ formats, loading, error }: { formats: { label: string; value: string }[], loading: boolean, error: string | null }) {
   return (
     <Box
@@ -865,8 +865,35 @@ export default function Clipper() {
       if (event) event.stopPropagation()
       setIsOpen((previous) => !previous)
     }
-    window.clip_forceShowPlayerControls = () => { }
-    window.clip_restorePlayerControlsVisibility = () => { }
+    window.clip_forceShowPlayerControls = () => {
+      const player = document.querySelector('.html5-video-player, ytd-watch-flexy') as HTMLElement | null
+      if (!player) return
+      player.classList.remove('ytp-hide-controls', 'ytp-hide-controls-forced')
+      const controls = player.querySelector('.ytp-controls, .ytp-keyboard-focus-overlay') as HTMLElement | null
+      if (controls) {
+        controls.style.opacity = '1'
+        controls.style.pointerEvents = 'auto'
+      }
+      const bottomBar = player.querySelector('.ytp-chrome-bottom, .ytp-right-controls') as HTMLElement | null
+      if (bottomBar) {
+        bottomBar.style.opacity = '1'
+        bottomBar.style.transition = 'opacity 0.1s ease'
+      }
+    }
+    window.clip_restorePlayerControlsVisibility = () => {
+      const player = document.querySelector('.html5-video-player, ytd-watch-flexy') as HTMLElement | null
+      if (!player) return
+      const controls = player.querySelector('.ytp-controls, .ytp-keyboard-focus-overlay') as HTMLElement | null
+      if (controls) {
+        controls.style.opacity = ''
+        controls.style.pointerEvents = ''
+      }
+      const bottomBar = player.querySelector('.ytp-chrome-bottom, .ytp-right-controls') as HTMLElement | null
+      if (bottomBar) {
+        bottomBar.style.opacity = ''
+        bottomBar.style.transition = ''
+      }
+    }
     window.clip_showTimelinePreview = (start: number, end: number) => {
       renderTimelinePreviewOverlay(start, end)
     }
