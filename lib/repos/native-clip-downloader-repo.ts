@@ -7,6 +7,7 @@ export interface ClipRangeDownloadRequest {
     endTimeSeconds: number
     label: string
     audioOnly?: boolean
+    formatSelector?: string
 }
 
 export interface FullVideoDownloadRequest {
@@ -14,9 +15,33 @@ export interface FullVideoDownloadRequest {
     url: string
     label: string
     audioOnly?: boolean
+    formatSelector?: string
 }
 
 export type ClipDownloadRequest = ClipRangeDownloadRequest | FullVideoDownloadRequest
+
+export interface ClipQualityFormat {
+    label: string
+    value: string
+}
+
+export interface GetVideoFormatsRequest {
+    type: 'get-video-formats'
+    url: string
+}
+
+export interface SuccessfulGetVideoFormatsResult {
+    ok: true
+    formats: ClipQualityFormat[]
+}
+
+export interface FailedGetVideoFormatsResult {
+    ok: false
+    code: 'busy' | 'native-host-unavailable' | 'missing-tool' | 'download-failed' | 'bad-request' | 'insufficient-disk-space' | 'low-disk-space' | 'disk-error'
+    message: string
+}
+
+export type GetVideoFormatsResult = SuccessfulGetVideoFormatsResult | FailedGetVideoFormatsResult
 
 export interface ShowDownloadedClipInFolderRequest {
     type: 'show-downloaded-clip-in-folder'
@@ -110,10 +135,28 @@ export function NativeClipDownloaderRepo() {
         }
     }
 
+    const getVideoFormats = async (url: string): Promise<GetVideoFormatsResult> => {
+        try {
+            const payload: GetVideoFormatsRequest = {
+                type: 'get-video-formats',
+                url,
+            }
+
+            const response = await browser.runtime.sendNativeMessage(NATIVE_HOST_NAME, payload)
+
+            return response as GetVideoFormatsResult
+        } catch (error) {
+            console.warn('[clip-dl] Get video formats error:', error)
+            return normalizeNativeError(error) as GetVideoFormatsResult
+        }
+    }
+
     return {
         downloadClip,
         showDownloadedClipInFolder,
+        getVideoFormats,
     }
+
 
 
 }

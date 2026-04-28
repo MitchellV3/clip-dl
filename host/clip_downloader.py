@@ -98,6 +98,116 @@ def _validate_download_request_fields(message: dict[str, Any], label_error_messa
     return url, label, bool(audio_only), None
 
 
+def _get_video_formats(url: str) -> list[dict[str, str]]:
+    """
+    Fetch and normalize video formats from yt-dlp.
+    Returns a list of format objects with 'label' and 'value' keys.
+    The 'value' is the exact format selector string to pass to yt-dlp.
+    """
+    try:
+        result = subprocess.run(
+            ['yt-dlp', '--dump-json', '--no-download', '--skip-download', url],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            encoding='utf-8',
+            errors='replace',
+        )
+        if result.returncode != 0:
+            logger.warning(f'yt-dlp failed to fetch formats for {url}: {result.stderr}')
+            return []
+
+        if not result.stdout.strip():
+            logger.warning(f'yt-dlp returned empty output for {url}')
+            return []
+
+        info = json.loads(result.stdout)
+        formats = info.get('formats', [])
+        
+        if not formats:
+            logger.warning(f'No formats found in yt-dlp output for {url}')
+            return []
+
+        # Group formats by video resolution and fps
+        # Map: (height, fps) -> best format in that group
+        format_groups: dict[tuple[int, int], dict[str, Any]] = {}
+        
+        for fmt in formats:
+            # Skip audio-only and other non-video formats
+            if fmt.get('vcodec') == 'none':
+                continue
+            
+            height = fmt.get('height')
+            fps = fmt.get('fps', 0)
+            format_id = fmt.get('format_id')
+            
+            if not format_id or height is None:
+                continue
+            
+            # Group by height and fps
+            key = (height, int(fps) if fps else 0)
+            
+            # Keep the format with the best bitrate in each group
+            if key not in format_groups or fmt.get('tbr', 0) > format_groups[key].get('tbr', 0):
+                format_groups[key] = fmt
+        
+        if not format_groups:
+            logger.warning(f'No suitable video formats found for {url}')
+            return []
+        
+        # Sort by resolution (height) descending, then by fps descending
+        sorted_formats = sorted(
+            format_groups.items(),
+            key=lambda x: (x[0][0], x[0][1]),
+            reverse=True
+        )
+        
+        # Build the result list
+        result_formats: list[dict[str, str]] = []
+        
+        for (height, fps), fmt in sorted_formats:
+            format_id = fmt['format_id']
+            
+            # Create a label for display
+            if fps and fps > 30:
+                label = f'{height}p{int(fps)}'
+            else:
+                label = f'{height}p'
+            
+            # For video-only formats, we need to pair with audio
+            if fmt.get('acodec') == 'none':
+                # Video-only: use format_id+bestaudio/best selector
+                selector = f'{format_id}+bestaudio/best'
+            else:
+                # Video+audio or other: use the format_id directly
+                selector = format_id
+            
+            result_formats.append({
+                'label': label,
+                'value': selector,
+            })
+        
+        # Add a "Best available" option at the top
+        if result_formats:
+            result_formats.insert(0, {
+                'label': 'Best available',
+                'value': 'bestvideo+bestaudio/best',
+            })
+        
+        logger.debug(f'Found {len(result_formats)} formats for {url}: {result_formats}')
+        return result_formats
+        
+    except subprocess.TimeoutExpired:
+        logger.warning(f'yt-dlp timeout while fetching formats for {url}')
+        return []
+    except json.JSONDecodeError as e:
+        logger.warning(f'Failed to parse yt-dlp JSON output for {url}: {e}')
+        return []
+    except Exception as e:
+        logger.warning(f'Unexpected error fetching formats for {url}: {e}')
+        return []
+
+
 def _validate_download_clip_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     if message.get('type') != 'download-clip':
         return None, _error_response('bad-request', "Expected request type 'download-clip'.")
@@ -125,14 +235,21 @@ def _validate_download_clip_request(message: dict[str, Any]) -> tuple[dict[str, 
     if end_time_seconds <= start_time_seconds:
         return None, _error_response('bad-request', 'Clip end time must be greater than start time.')
 
-    return {
+    validated_request: dict[str, Any] = {
         'type': 'download-clip',
         'url': url,
         'label': label,
         'startTimeSeconds': round(start_time_seconds, 3),
         'endTimeSeconds': round(end_time_seconds, 3),
         'audioOnly': bool(audio_only),
-    }, None
+    }
+
+    # Preserve optional formatSelector if provided
+    format_selector = message.get('formatSelector')
+    if isinstance(format_selector, str) and format_selector:
+        validated_request['formatSelector'] = format_selector
+
+    return validated_request, None
 
 
 def _validate_download_full_video_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
@@ -147,12 +264,19 @@ def _validate_download_full_video_request(message: dict[str, Any]) -> tuple[dict
     assert label is not None
     assert audio_only is not None
 
-    return {
+    validated_request: dict[str, Any] = {
         'type': 'download-full-video',
         'url': url,
         'label': label,
         'audioOnly': audio_only,
-    }, None
+    }
+
+    # Preserve optional formatSelector if provided
+    format_selector = message.get('formatSelector')
+    if isinstance(format_selector, str) and format_selector:
+        validated_request['formatSelector'] = format_selector
+
+    return validated_request, None
 
 
 def _validate_show_downloaded_clip_in_folder_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
@@ -175,6 +299,21 @@ def _validate_show_downloaded_clip_in_folder_request(message: dict[str, Any]) ->
     }, None
 
 
+def _validate_get_video_formats_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    if message.get('type') != 'get-video-formats':
+        return None, _error_response('bad-request', "Expected request type 'get-video-formats'.")
+
+    url = message.get('url')
+
+    if not isinstance(url, str) or not url:
+        return None, _error_response('bad-request', 'A non-empty video URL is required.')
+
+    return {
+        'type': 'get-video-formats',
+        'url': url,
+    }, None
+
+
 def _validate_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     request_type = message.get('type')
 
@@ -187,7 +326,10 @@ def _validate_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, d
     if request_type == 'show-downloaded-clip-in-folder':
         return _validate_show_downloaded_clip_in_folder_request(message)
 
-    return None, _error_response('bad-request', "Expected request type 'download-clip', 'download-full-video', or 'show-downloaded-clip-in-folder'.")
+    if request_type == 'get-video-formats':
+        return _validate_get_video_formats_request(message)
+
+    return None, _error_response('bad-request', "Expected request type 'download-clip', 'download-full-video', 'show-downloaded-clip-in-folder', or 'get-video-formats'.")
 
 
 def _require_tool(tool_name: str) -> tuple[str | None, dict[str, Any] | None]:
@@ -317,6 +459,11 @@ def _build_download_command(request: dict[str, Any], downloads_path: Path) -> li
     else:
         # Eventually can add a user option to change the preset to mp4 here.
         command.extend(['-t', 'mkv'])
+
+    # Add format selector if provided and not doing audio-only download
+    format_selector = request.get('formatSelector')
+    if format_selector and not audio_only:
+        command.extend(['-f', format_selector])
 
     command.append(request['url'])
     return command
@@ -632,6 +779,22 @@ def main() -> int:
             'opened': True,
             'outputPath': request['outputPath'],
             'highlighted': request['highlightFile'],
+        })
+        return 0
+
+    if request['type'] == 'get-video-formats':
+        logger.info(f'Fetching video formats for: {request["url"]}')
+        _, missing_tool_error = _require_tool('yt-dlp')
+        if missing_tool_error:
+            logger.error(f'Missing yt-dlp: {missing_tool_error.get("message")}')
+            _write_native_message(missing_tool_error)
+            return 0
+
+        formats = _get_video_formats(request['url'])
+        logger.info(f'Found {len(formats)} formats for {request["url"]}')
+        _write_native_message({
+            'ok': True,
+            'formats': formats,
         })
         return 0
 

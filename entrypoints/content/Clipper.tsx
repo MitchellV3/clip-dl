@@ -3,7 +3,7 @@ import { Box, Popover, Button, Text, Bleed, NativeSelect } from '@chakra-ui/reac
 import { createProxyService } from '@webext-core/proxy-service'
 import { toaster } from '@/components/ui/toaster'
 import { CLIP_DOWNLOADER_KEY } from '@/lib/services/proxy-service-keys'
-import type { ClipDownloadRequest, ClipDownloadResult } from '@/lib/repos/native-clip-downloader-repo'
+import type { ClipDownloadRequest, ClipDownloadResult, ClipRangeDownloadRequest, FullVideoDownloadRequest } from '@/lib/repos/native-clip-downloader-repo'
 import './style.css'
 
 const clipDownloader = createProxyService(CLIP_DOWNLOADER_KEY)
@@ -110,7 +110,15 @@ const clipState = {
   endTime: null as number | null,
   timeSelectionStatus: 'none' as TimeSelectionStatus,
   qualityFormats: [] as { label: string; value: string }[],
+  selectedFormatValue: null as string | null,
 }
+
+// Format cache: URL -> { formats, selectedValue }
+// This persists for the lifetime of the content script (single page session)
+const formatCache = new Map<string, {
+  formats: { label: string; value: string }[]
+  selectedValue: string | null
+}>()
 
 const clipDurations = [
   { label: '10 seconds', seconds: 10 },
@@ -243,7 +251,7 @@ function AudioOnlyToggle() {
         </Text>
         <Box
           width={'32px'}
-          height={'18px'}
+          height={'16px'}
           backgroundColor={active ? 'rgba(74, 222, 128, 0.5)' : 'rgba(255, 255, 255, 0.15)'}
           borderRadius={'9px'}
           position={'relative'}
@@ -268,8 +276,21 @@ function AudioOnlyToggle() {
 }
 
 // Quality selector sub-component
-//TODO: Implement the quality selector. Should default to the highest available quality. The formats will either need to be fetched directly from the YouTube page's quality options or requested from the native host using yt-dlp's format detection. The dropdown is then asynchronously populated from that list of quality options. The user should be able to select a quality format from the dropdown, and that format should be sent to the native host to be used in the yt-dlp download request. We should also handle the case where no formats are available or an error occurs while fetching formats, and display an appropriate message in the dropdown.
-function QualitySelector({ formats, loading, error }: { formats: { label: string; value: string }[], loading: boolean, error: string | null }) {
+function QualitySelector({
+  formats,
+  loading,
+  error,
+  selectedValue,
+  onSelectionChange,
+  disabled,
+}: {
+  formats: { label: string; value: string }[]
+  loading: boolean
+  error: string | null
+  selectedValue: string | null
+  onSelectionChange: (value: string) => void
+  disabled: boolean
+}) {
   return (
     <Box
       borderBottom={'1px solid rgba(255, 255, 255, 0.15)'}
@@ -298,37 +319,63 @@ function QualitySelector({ formats, loading, error }: { formats: { label: string
             color={'#e2e2e2'}
             border={'1px solid rgba(255, 255, 255, 0.2)'}
             borderRadius={'4px'}
-            cursor={'pointer'}
+            cursor={disabled || loading || error !== null ? 'not-allowed' : 'pointer'}
             fontSize={'12px'}
             outline={'none'}
             width={'calc(100% - 24px)'}
             transition={'all 0.2s ease'}
-            padding='16px 12px'
+            //padding='16px 12px'
+            title={disabled ? 'Quality selector disabled during audio-only mode' : 'Quality selector'}
+            aria-label={disabled ? 'Quality selector disabled during audio-only mode' : 'Quality selector'}
+            value={selectedValue || ''}
+            onChange={(e) => {
+              // Only allow selection change if not disabled, not loading, and no error
+              if (!disabled && !loading && error === null) {
+                const newValue = e.target.value
+                if (newValue) {
+                  onSelectionChange(newValue)
+                }
+              }
+            }}
+            opacity={disabled || loading || error !== null ? 0.6 : 1}
+            pointerEvents={disabled || loading || error !== null ? 'none' : 'auto'}
           >
             {loading && (
-              <option value="">
+              <option
+                label='Loading formats...'
+                value="">
                 Loading formats...
               </option>
             )}
-            {error && (
+            {error && !loading && (
               <option
+                label='Error loading formats'
                 value=""
                 style={{ color: '#ef4444' }}
               >
-                {error}
+                Error: {error}
               </option>
             )}
             {!loading && !error && formats.length === 0 && (
               <option
+                label='No formats detected'
                 value=""
                 style={{ color: '#ef4444' }}
               >
                 No formats detected
               </option>
             )}
-            {formats.map((fmt) => (
-              <option key={fmt.value} value={fmt.value}>{fmt.label}</option>
-            ))}
+            {!loading && !error && formats.length > 0 && (
+              <>
+                {formats.map((fmt) => (
+                  <option
+                    key={fmt.value}
+                    value={fmt.value}>
+                    {fmt.label}
+                  </option>
+                ))}
+              </>
+            )}
           </NativeSelect.Field>
           <NativeSelect.Indicator marginRight={'42px'} />
         </NativeSelect.Root>
@@ -394,7 +441,7 @@ function DurationButtons({
             backgroundColor={isFullVideo ? 'rgba(255, 255, 255, 0.05)' : 'transparent'}
             color={isFullVideo ? '#ffffff' : '#e2e2e2'}
             border={isFullVideo ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid transparent'}
-            padding='16px 12px'
+            //padding='16px 12px'
             margin={'1px 0'}
             borderRadius={'4px'}
             cursor={isDownloading ? 'progress' : 'pointer'}
@@ -579,8 +626,10 @@ const ClipIcon = () => (
 export default function Clipper() {
   const [isOpen, setIsOpen] = useState(false)
   const [qualityFormats, setQualityFormats] = useState<{ label: string; value: string }[]>([])
+  const [selectedFormatValue, setSelectedFormatValue] = useState<string | null>(null)
   const [loadingFormats, setLoadingFormats] = useState(false)
   const [formatError, setFormatError] = useState<string | null>(null)
+  const [lastLoadedUrl, setLastLoadedUrl] = useState<string | null>(null)
   const [isDownloading, setIsDownloading] = useState(false)
   const [timeSelection, setTimeSelection] = useState<ClipTimeSelection>(() => getClipTimeSelection())
 
@@ -610,15 +659,73 @@ export default function Clipper() {
   }, [])
 
   useEffect(() => {
-    if (isOpen) {
-      if (window.clip_forceShowPlayerControls) window.clip_forceShowPlayerControls()
-      setLoadingFormats(false)
-      setQualityFormats([])
-      setFormatError(FORMAT_PLACEHOLDER_MESSAGE)
-    } else {
+    if (!isOpen) {
       clearTimelinePreviewOverlay()
       if (window.clip_restorePlayerControlsVisibility) window.clip_restorePlayerControlsVisibility()
+      return
     }
+
+    // When opening the popover, show player controls and fetch formats if needed
+    if (window.clip_forceShowPlayerControls) window.clip_forceShowPlayerControls()
+
+    const currentUrl = window.location.href
+
+    // Check if we already loaded formats for this URL
+    if (lastLoadedUrl === currentUrl && formatCache.has(currentUrl)) {
+      const cached = formatCache.get(currentUrl)!
+      setQualityFormats(cached.formats)
+      setSelectedFormatValue(cached.selectedValue)
+      setLoadingFormats(false)
+      setFormatError(null)
+      clipState.qualityFormats = cached.formats
+      clipState.selectedFormatValue = cached.selectedValue
+      return
+    }
+
+    // Different URL or no cache: fetch new formats
+    if (lastLoadedUrl !== currentUrl) {
+      setLastLoadedUrl(currentUrl)
+      setSelectedFormatValue(null)
+      clipState.selectedFormatValue = null
+    }
+
+    setLoadingFormats(true)
+    setFormatError(null)
+
+    // Fetch formats from native host
+    clipDownloader.getVideoFormats(currentUrl).then((result) => {
+      if (result.ok) {
+        const formats = result.formats
+        setQualityFormats(formats)
+        setLoadingFormats(false)
+        setFormatError(null)
+        clipState.qualityFormats = formats
+
+        // Auto-select the first format (best available)
+        if (formats.length > 0) {
+          const firstValue = formats[0].value
+          setSelectedFormatValue(firstValue)
+          clipState.selectedFormatValue = firstValue
+        }
+
+        // Cache the result
+        formatCache.set(currentUrl, {
+          formats,
+          selectedValue: formats.length > 0 ? formats[0].value : null,
+        })
+      } else {
+        setLoadingFormats(false)
+        setFormatError(result.message)
+        clipState.qualityFormats = []
+        setQualityFormats([])
+      }
+    }).catch((error) => {
+      setLoadingFormats(false)
+      setFormatError('Failed to fetch formats')
+      clipState.qualityFormats = []
+      setQualityFormats([])
+      console.warn('[clip-dl] Error fetching formats:', error)
+    })
   }, [isOpen])
 
   useEffect(() => {
@@ -639,6 +746,18 @@ export default function Clipper() {
     }
 
     setIsOpen((previous) => !previous)
+  }, [])
+
+  const handleFormatSelectionChange = useCallback((newValue: string) => {
+    setSelectedFormatValue(newValue)
+    clipState.selectedFormatValue = newValue
+
+    // Update cache for current URL
+    const currentUrl = window.location.href
+    if (formatCache.has(currentUrl)) {
+      const cached = formatCache.get(currentUrl)!
+      cached.selectedValue = newValue
+    }
   }, [])
 
   const openFileLocation = useCallback(async (result: Extract<ClipDownloadResult, { ok: true }>) => {
@@ -758,12 +877,17 @@ export default function Clipper() {
 
   const handleDurationDownload = useCallback(async (seconds: number, label: string) => {
     if (seconds === -1) {
-      await runDownloadRequest({
+      const request: FullVideoDownloadRequest = {
         type: 'download-full-video',
         url: window.location.href,
         label,
         audioOnly: clipState.audioOnly,
-      })
+      }
+      // Add format selector if available and not audio-only
+      if (!clipState.audioOnly && clipState.selectedFormatValue) {
+        request.formatSelector = clipState.selectedFormatValue
+      }
+      await runDownloadRequest(request)
       return
     }
 
@@ -781,14 +905,19 @@ export default function Clipper() {
     const endTimeSeconds = Number(videoElement.currentTime.toFixed(3))
     const startTimeSeconds = Number(Math.max(endTimeSeconds - seconds, 0).toFixed(3))
 
-    await runDownloadRequest({
+    const request: ClipRangeDownloadRequest = {
       type: 'download-clip',
       url: window.location.href,
       startTimeSeconds,
       endTimeSeconds,
       label,
       audioOnly: clipState.audioOnly,
-    })
+    }
+    // Add format selector if available and not audio-only
+    if (!clipState.audioOnly && clipState.selectedFormatValue) {
+      request.formatSelector = clipState.selectedFormatValue
+    }
+    await runDownloadRequest(request)
   }, [runDownloadRequest])
 
   const handleSetStartTime = useCallback(() => {
@@ -846,14 +975,19 @@ export default function Clipper() {
       return
     }
 
-    await runDownloadRequest({
+    const request: ClipRangeDownloadRequest = {
       type: 'download-clip',
       url: window.location.href,
       startTimeSeconds: resolvedRange.startTimeSeconds,
       endTimeSeconds: resolvedRange.endTimeSeconds,
       label: CUSTOM_CLIP_LABEL,
       audioOnly: clipState.audioOnly,
-    })
+    }
+    // Add format selector if available and not audio-only
+    if (!clipState.audioOnly && clipState.selectedFormatValue) {
+      request.formatSelector = clipState.selectedFormatValue
+    }
+    await runDownloadRequest(request)
   }, [runDownloadRequest])
 
   useEffect(() => {
@@ -967,7 +1101,14 @@ export default function Clipper() {
           <Popover.Body>
             <Box display={'flex'} flexDirection={'column'} gap={2} width={'full'}>
               <AudioOnlyToggle />
-              <QualitySelector formats={qualityFormats} loading={loadingFormats} error={formatError} />
+              <QualitySelector
+                formats={qualityFormats}
+                loading={loadingFormats}
+                error={formatError}
+                selectedValue={selectedFormatValue}
+                onSelectionChange={handleFormatSelectionChange}
+                disabled={clipState.audioOnly}
+              />
               <DurationButtons isDownloading={isDownloading} onDownload={handleDurationDownload} />
               <TimeSelection
                 status={timeSelection.timeSelectionStatus}
