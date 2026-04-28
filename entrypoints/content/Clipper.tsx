@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-import { Box, Popover, Button, Text, Bleed, NativeSelect } from '@chakra-ui/react'
+import { Box, Popover, Button, Text, Bleed, NativeSelect, Spinner } from '@chakra-ui/react'
 import { createProxyService } from '@webext-core/proxy-service'
 import { toaster } from '@/components/ui/toaster'
 import { CLIP_DOWNLOADER_KEY } from '@/lib/services/proxy-service-keys'
@@ -307,14 +307,21 @@ function QualitySelector({
           opacity={0.9}
           fontWeight={500}
         >
-          Video Quality
+          <Box display={'flex'} justifyContent={"space-between"} gap={'8px'}>
+            <Text>Video Quality</Text>
+            {loading && (
+              <Box display={'flex'} alignItems={'center'} marginLeft={'8px'}>
+                <Text>Loading...</Text>
+              </Box>
+            )}
+          </Box>
         </Box>
         <NativeSelect.Root
           size={'lg'}
           padding={'8px 12px 8px'}
         >
           <NativeSelect.Field
-            placeholder="Select quality"
+            placeholder={"Select quality"}
             backgroundColor={'rgba(255, 255, 255, 0.05)'}
             color={'#e2e2e2'}
             border={'1px solid rgba(255, 255, 255, 0.2)'}
