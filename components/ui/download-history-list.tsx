@@ -1,5 +1,6 @@
-import { Box, Button, HStack, Text, VStack } from '@chakra-ui/react';
+import { Box, Button, Dialog, HStack, Portal, Text, VStack } from '@chakra-ui/react';
 import type { DownloadHistoryEntry } from '@/lib/repos/download-history-repo';
+import { useCallback, useState } from 'react';
 
 function formatDateTime(timestamp: number): string {
     return new Intl.DateTimeFormat(undefined, {
@@ -47,6 +48,7 @@ export function DownloadHistoryList({
     onRetry,
     onRemove,
     onClear,
+    onConfirmClear,
     busyEntryId,
 }: {
     entries: DownloadHistoryEntry[];
@@ -61,26 +63,57 @@ export function DownloadHistoryList({
     onRetry: (entry: DownloadHistoryEntry) => void;
     onRemove: (entry: DownloadHistoryEntry) => void;
     onClear: () => void;
+    onConfirmClear: () => void;
     busyEntryId: string | null;
 }) {
+    const [confirmOpen, setConfirmOpen] = useState(false);
+
+    const handleConfirm = useCallback(() => {
+        setConfirmOpen(false);
+        onConfirmClear();
+    }, [onConfirmClear]);
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
     return (
-        <VStack align="stretch" gap="3" width="full" height={"full"}>
+        <VStack align="stretch" gap="3" width="full" height={"full"} className='download-history-wrapper'>
             <HStack justify="space-between" align="center">
                 <Text color="whiteAlpha.800" fontSize="sm">
                     Showing page {page} of {totalPages} · {total} entr{total === 1 ? 'y' : 'ies'}
                 </Text>
-                <Button
-                    size="sm"
-                    bg="whiteAlpha.100"
-                    border="none"
-                    _hover={{ backgroundColor: 'whiteAlpha.200' }}
-                    onClick={onClear}
-                    disabled={loading || total === 0}
-                >
-                    Clear History
-                </Button>
+                <Dialog.Root open={confirmOpen} onOpenChange={(e) => setConfirmOpen(e.open)} modal={true} >
+                    <Dialog.Trigger asChild>
+                        <Button
+                            size="sm"
+                            bg="whiteAlpha.100"
+                            border="none"
+                            _hover={{ backgroundColor: 'whiteAlpha.200' }}
+                            disabled={loading || total === 0}
+                        >
+                            Clear History
+                        </Button>
+                    </Dialog.Trigger>
+
+                    <Dialog.Backdrop />
+                    <Dialog.Positioner>
+                        <Dialog.Content backgroundColor={"blackAlpha.900"}>
+                            <Dialog.Header>
+                                <Dialog.Title>Clear Download History</Dialog.Title>
+                            </Dialog.Header>
+                            <Dialog.Body display="flex" flexDirection="column">
+                                <Text>Are you sure you want to clear all download history?</Text>
+                                <Text color="red.500"
+                                >This action cannot be undone.</Text>
+                            </Dialog.Body>
+                            <Dialog.Footer>
+                                <Dialog.ActionTrigger asChild>
+                                    <Button variant="outline" bg="whiteAlpha.100" _hover={{ backgroundColor: 'whiteAlpha.200' }}>Cancel</Button>
+                                </Dialog.ActionTrigger>
+                                <Button bg="red.500" _hover={{ backgroundColor: 'red.600' }} onClick={handleConfirm}>Clear All</Button>
+                            </Dialog.Footer>
+                        </Dialog.Content>
+                    </Dialog.Positioner>
+
+                </Dialog.Root>
             </HStack>
 
             {error && (

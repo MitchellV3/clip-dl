@@ -2,7 +2,7 @@ import type { ClipDownloadRequest, ClipDownloadResult } from './native-clip-down
 
 export const DOWNLOAD_HISTORY_STORAGE_KEY = 'downloadHistory';
 export const DOWNLOAD_HISTORY_RETENTION_LIMIT = 500;
-export const DOWNLOAD_HISTORY_PAGE_SIZE = 20;
+export const DOWNLOAD_HISTORY_PAGE_SIZE = 10;
 
 export type DownloadHistoryStatus = 'completed' | 'error' | 'cancelled';
 

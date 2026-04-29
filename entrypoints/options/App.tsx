@@ -258,6 +258,7 @@ export default function TestApp() {
                         onRetry={handleRetry}
                         onRemove={handleRemove}
                         onClear={handleClear}
+                        onConfirmClear={handleClear}
                         busyEntryId={busyEntryId}
                     />
                 </Box>
