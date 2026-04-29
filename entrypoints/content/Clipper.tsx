@@ -346,16 +346,17 @@ function QualitySelector({
             }}
             opacity={disabled || loading || error !== null ? 0.6 : 1}
             pointerEvents={disabled || loading || error !== null ? 'none' : 'auto'}
+
           >
             {loading && (
-              <option
+              <option title='Loading'
                 label='Loading formats...'
                 value="">
                 Loading formats...
               </option>
             )}
             {error && !loading && (
-              <option
+              <option title='Error'
                 label='Error loading formats'
                 value=""
                 style={{ color: '#ef4444' }}
@@ -364,7 +365,7 @@ function QualitySelector({
               </option>
             )}
             {!loading && !error && formats.length === 0 && (
-              <option
+              <option title='No formats'
                 label='No formats detected'
                 value=""
                 style={{ color: '#ef4444' }}
@@ -375,7 +376,7 @@ function QualitySelector({
             {!loading && !error && formats.length > 0 && (
               <>
                 {formats.map((fmt) => (
-                  <option
+                  <option title={fmt.label}
                     key={fmt.value}
                     value={fmt.value}>
                     {fmt.label}
@@ -630,6 +631,8 @@ const ClipIcon = () => (
   </svg>
 )
 
+//TODO: When a download fails, allow the user to click a 'retry' button that attempts to download the same clip again with the same settings without needing to reconfigure the options
+//TODO: Add download history persistence across page sessions, allowing the user to see a list of previously downloaded clips with metadata and open the file location from the history entry. The extension has a history section in the settings where users should be able see a list of all previously downloaded clips with details like source URL, clip length, download date, and status (success/failure).
 export default function Clipper() {
   const [isOpen, setIsOpen] = useState(false)
   const [qualityFormats, setQualityFormats] = useState<{ label: string; value: string }[]>([])

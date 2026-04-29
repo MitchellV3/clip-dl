@@ -83,7 +83,7 @@ def _error_response(code: str, message: str) -> dict[str, Any]:
         'message': message,
     }
 
-
+#TODO: Add clip queue system to allow multiple downloads at once, queued to download one after another. There should be multiple toasts for each download with real-time status updates (e.g., "Downloading...", "Download complete", "Download failed - click to retry", etc.).
 def _validate_download_request_fields(message: dict[str, Any], label_error_message: str) -> tuple[str | None, str | None, bool | None, dict[str, Any] | None]:
     url = message.get('url')
     label = message.get('label')
@@ -422,7 +422,7 @@ def _build_full_video_output_template(request: dict[str, Any]) -> str:
     label_token = _sanitize_file_token(request['label']).lower()
     return f'%(title).180B [%(id)s] {label_token}.%(ext)s'
 
-
+#TODO: Make sure as much useful metadata as possible is preserved in the downloaded clips (e.g., video URL, title, uploader, upload date, etc.).
 def _build_download_command(request: dict[str, Any], downloads_path: Path) -> list[str]:
     audio_only = request.get('audioOnly', False)
 
