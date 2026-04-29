@@ -83,7 +83,7 @@ def _error_response(code: str, message: str) -> dict[str, Any]:
         'message': message,
     }
 
-#TODO: Add clip queue system to allow multiple downloads at once, queued to download one after another. There should be multiple toasts for each download with real-time status updates (e.g., "Downloading...", "Download complete", "Download failed - click to retry", etc.).
+#TODO: Add clip queue system to allow multiple downloads at once, queued to download one after another. There should be multiple toasts for each download with real-time status updates.
 def _validate_download_request_fields(message: dict[str, Any], label_error_message: str) -> tuple[str | None, str | None, bool | None, dict[str, Any] | None]:
     url = message.get('url')
     label = message.get('label')

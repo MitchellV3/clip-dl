@@ -10,10 +10,24 @@ const clipDownloader = createProxyService(CLIP_DOWNLOADER_KEY)
 const PAGE_DEBUG_EVENT = '__clip_dl_native_debug__'
 const FORMAT_PLACEHOLDER_MESSAGE = 'Format selection is not implemented in this first host-backed version.'
 const CUSTOM_CLIP_LABEL = 'Custom Clip'
+const MAX_QUEUE_SIZE = 5
+
 type TimeSelectionStatus = ClipTimeSelection['timeSelectionStatus']
 type ResolvedClipRange = {
   startTimeSeconds: number
   endTimeSeconds: number
+}
+
+type QueueJobStatus = 'pending' | 'processing' | 'success' | 'failed'
+
+interface QueueJob {
+  id: string
+  request: ClipDownloadRequest
+  status: QueueJobStatus
+  createdAt: number
+  toastId: string
+  result?: Extract<ClipDownloadResult, { ok: true }>
+  error?: { code: string; message: string }
 }
 
 function emitPageDebugLog(payload: unknown) {
@@ -393,19 +407,19 @@ function QualitySelector({
 }
 
 function DurationButtons({
-  isDownloading,
+  shouldDisable,
   onDownload,
 }: {
-  isDownloading: boolean
-  onDownload: (seconds: number, label: string) => Promise<void>
+  shouldDisable: boolean
+  onDownload: (seconds: number, label: string) => void
 }) {
-  async function handleClick(e: React.MouseEvent, seconds: number) {
+  function handleClick(e: React.MouseEvent, seconds: number) {
     e.stopPropagation()
 
     const label = clipDurations.find((duration) => duration.seconds === seconds)?.label ?? `${seconds}s`
     emitPageDebugLog({ stage: 'duration-clicked', durationSeconds: seconds, label })
 
-    await onDownload(seconds, label)
+    onDownload(seconds, label)
   }
 
   function handleDurationButtonHover(e: React.MouseEvent, seconds: number) {
@@ -444,21 +458,21 @@ function DurationButtons({
         return (
           <Button
             key={duration.seconds}
-            onClick={(event) => void handleClick(event, duration.seconds)}
-            disabled={isDownloading}
+            onClick={(event) => handleClick(event, duration.seconds)}
+            disabled={shouldDisable}
             backgroundColor={isFullVideo ? 'rgba(255, 255, 255, 0.05)' : 'transparent'}
             color={isFullVideo ? '#ffffff' : '#e2e2e2'}
             border={isFullVideo ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid transparent'}
             //padding='16px 12px'
             margin={'1px 0'}
             borderRadius={'4px'}
-            cursor={isDownloading ? 'progress' : 'pointer'}
+            cursor={shouldDisable ? 'progress' : 'pointer'}
             fontSize={'12px'}
             textAlign={'center'}
             transition={'all 0.2s ease'}
             fontWeight={isFullVideo ? '600' : '400'}
             gridColumn={isFullVideo ? '1 / -1' : 'auto'}
-            opacity={isDownloading ? 0.6 : 1}
+            opacity={shouldDisable ? 0.6 : 1}
             _hover={{
               backgroundColor: isFullVideo ? 'rgba(255, 255, 255, 0.1)' : 'rgba(74, 222, 128, 0.1)',
               borderColor: isFullVideo ? 'rgba(255, 255, 255, 0.3)' : 'rgba(74, 222, 128, 0.3)',
@@ -476,14 +490,14 @@ function DurationButtons({
 
 function TimeSelection({
   status,
-  isDownloading,
+  shouldDisable,
   onSetStart,
   onSetEnd,
   onCancel,
   onDownload,
 }: {
   status: TimeSelectionStatus
-  isDownloading: boolean
+  shouldDisable: boolean
   onSetStart: () => void
   onSetEnd: () => void
   onCancel: () => void
@@ -515,20 +529,20 @@ function TimeSelection({
       >
         <Button
           onClick={onSetStart}
-          disabled={isDownloading}
+          disabled={shouldDisable}
           backgroundColor={'rgba(74, 222, 128, 0.2)'}
           color={'#4ade80'}
           border={'1px solid rgba(74, 222, 128, 0.3)'}
           padding={'16px 12px'}
           borderRadius={'4px'}
-          cursor={isDownloading ? 'progress' : 'pointer'}
+          cursor={shouldDisable ? 'progress' : 'pointer'}
           fontSize={'12px'}
           fontWeight={'600'}
           transition={'all 0.2s ease'}
           overflow={'hidden'}
           wordBreak={'break-word'}
           whiteSpace={'normal'}
-          opacity={isDownloading ? 0.6 : 1}
+          opacity={shouldDisable ? 0.6 : 1}
           _hover={{ backgroundColor: 'rgba(74, 222, 128, 0.3)' }}
         >
           <Text
@@ -541,20 +555,20 @@ function TimeSelection({
         </Button>
         <Button
           onClick={onSetEnd}
-          disabled={isDownloading}
+          disabled={shouldDisable}
           backgroundColor={'rgba(74, 222, 128, 0.2)'}
           color={'#4ade80'}
           border={'1px solid rgba(74, 222, 128, 0.3)'}
           padding={'16px 12px'}
           borderRadius={'4px'}
-          cursor={isDownloading ? 'progress' : 'pointer'}
+          cursor={shouldDisable ? 'progress' : 'pointer'}
           fontSize={'12px'}
           fontWeight={'600'}
           transition={'all 0.2s ease'}
           overflow={'hidden'}
           wordBreak={'break-word'}
           whiteSpace={'normal'}
-          opacity={isDownloading ? 0.6 : 1}
+          opacity={shouldDisable ? 0.6 : 1}
           _hover={{ backgroundColor: 'rgba(74, 222, 128, 0.3)' }}
         >
           <Text
@@ -568,13 +582,13 @@ function TimeSelection({
         {showCancel && (
           <Button
             onClick={onCancel}
-            disabled={isDownloading}
+            disabled={shouldDisable}
             backgroundColor={'rgba(239, 68, 68, 0.2)'}
             color={'#ef4444'}
             border={'1px solid rgba(239, 68, 68, 0.3)'}
             padding={'16px 12px'}
             borderRadius={'4px'}
-            cursor={isDownloading ? 'progress' : 'pointer'}
+            cursor={shouldDisable ? 'progress' : 'pointer'}
             fontSize={'12px'}
             fontWeight={'600'}
             transition={'all 0.2s ease'}
@@ -582,7 +596,7 @@ function TimeSelection({
             wordBreak={'break-word'}
             whiteSpace={'normal'}
             gridColumn={'1 / -1'}
-            opacity={isDownloading ? 0.6 : 1}
+            opacity={shouldDisable ? 0.6 : 1}
             _hover={{ backgroundColor: 'rgba(239, 68, 68, 0.3)' }}
           >
             Cancel Selection
@@ -591,13 +605,13 @@ function TimeSelection({
         {showDownload && (
           <Button
             onClick={onDownload}
-            disabled={isDownloading}
+            disabled={shouldDisable}
             backgroundColor={'#4ade80'}
             color={'#1a1a1a'}
             border={'none'}
             padding={'16px 12px'}
             borderRadius={'4px'}
-            cursor={isDownloading ? 'progress' : 'pointer'}
+            cursor={shouldDisable ? 'progress' : 'pointer'}
             fontSize={'12px'}
             fontWeight={'600'}
             transition={'all 0.2s ease'}
@@ -605,7 +619,7 @@ function TimeSelection({
             wordBreak={'break-word'}
             whiteSpace={'normal'}
             gridColumn={'1 / -1'}
-            opacity={isDownloading ? 0.6 : 1}
+            opacity={shouldDisable ? 0.6 : 1}
             _hover={{
               backgroundColor: '#22c55e',
             }}
@@ -632,7 +646,6 @@ const ClipIcon = () => (
 )
 
 //TODO: When a download fails, allow the user to click a 'retry' button that attempts to download the same clip again with the same settings without needing to reconfigure the options
-//TODO: Add download history persistence across page sessions, allowing the user to see a list of previously downloaded clips with metadata and open the file location from the history entry. The extension has a history section in the settings where users should be able see a list of all previously downloaded clips with details like source URL, clip length, download date, and status (success/failure).
 export default function Clipper() {
   const [isOpen, setIsOpen] = useState(false)
   const [qualityFormats, setQualityFormats] = useState<{ label: string; value: string }[]>([])
@@ -640,8 +653,14 @@ export default function Clipper() {
   const [loadingFormats, setLoadingFormats] = useState(false)
   const [formatError, setFormatError] = useState<string | null>(null)
   const [lastLoadedUrl, setLastLoadedUrl] = useState<string | null>(null)
-  const [isDownloading, setIsDownloading] = useState(false)
+  const [downloadQueue, setDownloadQueue] = useState<QueueJob[]>([])
+  const [activeJobId, setActiveJobId] = useState<string | null>(null)
   const [timeSelection, setTimeSelection] = useState<ClipTimeSelection>(() => getClipTimeSelection())
+
+  // Derived state for button disabling
+  const isQueueFull = downloadQueue.length >= MAX_QUEUE_SIZE
+  const isProcessingQueue = activeJobId !== null
+  const shouldDisableDownloadButtons = isQueueFull
 
   useEffect(() => {
     const scriptId = 'clip-dl-page-console-bridge'
@@ -795,28 +814,43 @@ export default function Clipper() {
     }
   }, [])
 
-  //TODO: Add ability to queue downloads instead of disabling the UI while a download is in progress.
-  const runDownloadRequest = useCallback(async (request: ClipDownloadRequest) => {
-    if (isDownloading) {
+  const enqueueDownload = useCallback((request: ClipDownloadRequest) => {
+    if (isQueueFull) {
       toaster.create({
-        title: 'Download already running',
-        description: 'Wait for the active clip download to finish before starting another one.',
+        title: 'Queue full',
+        description: `Maximum ${MAX_QUEUE_SIZE} downloads can be queued. Wait for some to complete before adding more.`,
         duration: 4000,
         closable: true,
       })
       return
     }
 
-    const loadingToastId = `clip-download-${Date.now()}`
-    const loadingTitle = request.type === 'download-full-video'
-      ? `Downloading ${request.audioOnly ? 'audio' : 'full video'}`
-      : 'Downloading clip'
-    const loadingDescription = request.type === 'download-full-video'
-      ? `Saving the full ${request.audioOnly ? 'audio track' : 'video'} to Downloads. A progress window was opened on the desktop.`
-      : `Saving clip from ${formatTimeDisplay(request.startTimeSeconds)} to ${formatTimeDisplay(request.endTimeSeconds)}. A progress window was opened on the desktop.`
+    const jobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+    const toastId = `queue-${jobId}`
+    const newJob: QueueJob = {
+      id: jobId,
+      request,
+      status: 'pending',
+      createdAt: Date.now(),
+      toastId,
+    }
+
+    const nextQueue = [...downloadQueue, newJob]
+    setDownloadQueue(nextQueue)
+
+    // Show queued toast with position
+    toaster.create({
+      id: toastId,
+      title: 'Download queued',
+      description: `Position ${nextQueue.length}/${MAX_QUEUE_SIZE} in queue`,
+      duration: 3000,
+      closable: true,
+    })
 
     emitPageDebugLog({
-      stage: 'native-download-requested',
+      stage: 'download-queued',
+      jobId,
+      position: nextQueue.length,
       request: request.type === 'download-clip'
         ? {
           ...request,
@@ -825,67 +859,123 @@ export default function Clipper() {
         }
         : request,
     })
+  }, [downloadQueue, isQueueFull])
 
-    setIsDownloading(true)
-    toaster.loading({
-      id: loadingToastId,
-      title: loadingTitle,
-      description: loadingDescription,
-      closable: true,
-    })
+  // Process queue: execute next pending job
+  useEffect(() => {
+    if (activeJobId !== null) {
+      // Already processing
+      return
+    }
 
-    let result: ClipDownloadResult | null = null
+    const pendingJob = downloadQueue.find((job) => job.status === 'pending')
+    if (!pendingJob) {
+      // No pending jobs
+      return
+    }
 
-    try {
-      result = await clipDownloader.downloadClip(request)
-    } catch (error) {
-      result = {
-        ok: false,
-        code: 'download-failed',
-        message: String(error),
+    setActiveJobId(pendingJob.id)
+
+    // Execute download
+    const executeDownload = async () => {
+      const loadingTitle = pendingJob.request.type === 'download-full-video'
+        ? `Downloading ${pendingJob.request.audioOnly ? 'audio' : 'full video'}`
+        : 'Downloading clip'
+      const loadingDescription = pendingJob.request.type === 'download-full-video'
+        ? `Saving the full ${pendingJob.request.audioOnly ? 'audio track' : 'video'} to Downloads. A progress window was opened on the desktop.`
+        : `Saving clip from ${formatTimeDisplay(pendingJob.request.startTimeSeconds)} to ${formatTimeDisplay(pendingJob.request.endTimeSeconds)}. A progress window was opened on the desktop.`
+
+      // Dismiss queued toast and show loading toast
+      toaster.dismiss(pendingJob.toastId)
+      toaster.loading({
+        id: pendingJob.toastId,
+        title: loadingTitle,
+        description: loadingDescription,
+        closable: true,
+      })
+
+      emitPageDebugLog({
+        stage: 'download-started',
+        jobId: pendingJob.id,
+      })
+
+      let result: ClipDownloadResult | null = null
+      try {
+        result = await clipDownloader.downloadClip(pendingJob.request)
+      } catch (error) {
+        result = {
+          ok: false,
+          code: 'download-failed',
+          message: String(error),
+        }
       }
-    } finally {
-      setIsDownloading(false)
-      toaster.dismiss(loadingToastId)
-    }
 
-    emitPageDebugLog({ stage: 'native-download-result', result })
+      emitPageDebugLog({ stage: 'download-result', jobId: pendingJob.id, result })
 
-    if (result.ok) {
-      toaster.success({
-        title: 'Success',
-        description: `Saved ${result.fileName} to Downloads.`,
-        duration: 8000,
-        closable: true,
-        action: {
-          label: 'Show file',
-          onClick: () => {
-            void openFileLocation(result)
+      // Update queue with result
+      setDownloadQueue((prev) =>
+        prev.map((job) => {
+          if (job.id !== pendingJob.id) return job
+          if (!result) {
+            return {
+              ...job,
+              status: 'failed',
+              error: { code: 'unknown-error', message: 'No result received' },
+            }
+          }
+          if (result.ok) {
+            return { ...job, status: 'success', result }
+          }
+          return {
+            ...job,
+            status: 'failed',
+            error: { code: result.code, message: result.message },
+          }
+        })
+      )
+
+      // Show final toast
+      toaster.dismiss(pendingJob.toastId)
+
+      if (result?.ok) {
+        toaster.success({
+          title: 'Success',
+          description: `Saved ${result.fileName} to Downloads.`,
+          duration: 8000,
+          closable: true,
+          action: {
+            label: 'Show file',
+            onClick: () => {
+              void openFileLocation(result)
+            },
           },
-        },
-      })
-      return
+        })
+      } else if (result) {
+        if (result.code === 'insufficient-disk-space' || result.code === 'low-disk-space') {
+          toaster.error({
+            title: 'Insufficient disk space',
+            description: result.message,
+            duration: 10000,
+            closable: true,
+          })
+        } else {
+          toaster.error({
+            title: pendingJob.request.type === 'download-full-video' ? 'Full video download failed' : 'Clip download failed',
+            description: result.message,
+            duration: 10000,
+            closable: true,
+          })
+        }
+      }
+
+      // Clear active job to allow processor to pick next one
+      setActiveJobId(null)
     }
 
-    if (result.code === 'insufficient-disk-space' || result.code === 'low-disk-space') {
-      toaster.error({
-        title: 'Insufficient disk space',
-        description: result.message,
-        duration: 10000,
-        closable: true,
-      })
-      return
-    }
+    executeDownload()
+  }, [downloadQueue, activeJobId, openFileLocation])
 
-    toaster.error({
-      title: request.type === 'download-full-video' ? 'Full video download failed' : 'Clip download failed',
-      description: result.message,
-      duration: 10000,
-      closable: true,
-    })
-  }, [isDownloading, openFileLocation])
-
-  const handleDurationDownload = useCallback(async (seconds: number, label: string) => {
+  const handleDurationDownload = useCallback((seconds: number, label: string) => {
     if (seconds === -1) {
       const request: FullVideoDownloadRequest = {
         type: 'download-full-video',
@@ -897,7 +987,7 @@ export default function Clipper() {
       if (!clipState.audioOnly && clipState.selectedFormatValue) {
         request.formatSelector = clipState.selectedFormatValue
       }
-      await runDownloadRequest(request)
+      enqueueDownload(request)
       return
     }
 
@@ -927,8 +1017,8 @@ export default function Clipper() {
     if (!clipState.audioOnly && clipState.selectedFormatValue) {
       request.formatSelector = clipState.selectedFormatValue
     }
-    await runDownloadRequest(request)
-  }, [runDownloadRequest])
+    enqueueDownload(request)
+  }, [enqueueDownload])
 
   const handleSetStartTime = useCallback(() => {
     const videoElement = getActiveVideoElement()
@@ -971,7 +1061,7 @@ export default function Clipper() {
     emitPageDebugLog({ stage: 'time-selection-cleared' })
   }, [])
 
-  const handleCustomClipDownload = useCallback(async () => {
+  const handleCustomClipDownload = useCallback(() => {
     const selection = getClipTimeSelection()
     const resolvedRange = resolveSelectedClipRange(selection)
 
@@ -997,8 +1087,8 @@ export default function Clipper() {
     if (!clipState.audioOnly && clipState.selectedFormatValue) {
       request.formatSelector = clipState.selectedFormatValue
     }
-    await runDownloadRequest(request)
-  }, [runDownloadRequest])
+    enqueueDownload(request)
+  }, [enqueueDownload])
 
   useEffect(() => {
     window.clip_getAudioOnly = () => clipState.audioOnly
@@ -1119,10 +1209,10 @@ export default function Clipper() {
                 onSelectionChange={handleFormatSelectionChange}
                 disabled={clipState.audioOnly}
               />
-              <DurationButtons isDownloading={isDownloading} onDownload={handleDurationDownload} />
+              <DurationButtons shouldDisable={shouldDisableDownloadButtons} onDownload={handleDurationDownload} />
               <TimeSelection
                 status={timeSelection.timeSelectionStatus}
-                isDownloading={isDownloading}
+                shouldDisable={shouldDisableDownloadButtons}
                 onSetStart={handleSetStartTime}
                 onSetEnd={handleSetEndTime}
                 onCancel={handleCancelTimeSelection}
