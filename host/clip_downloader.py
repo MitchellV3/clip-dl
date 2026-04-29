@@ -421,7 +421,6 @@ def _build_full_video_output_template(request: dict[str, Any]) -> str:
     label_token = _sanitize_file_token(request['label']).lower()
     return f'%(title).180B [%(id)s] {label_token}.%(ext)s'
 
-#TODO: Make sure as much useful metadata as possible is preserved in the downloaded clips (e.g., video URL, title, uploader, upload date, etc.).
 def _build_download_command(request: dict[str, Any], downloads_path: Path) -> list[str]:
     audio_only = request.get('audioOnly', False)
 
@@ -436,6 +435,8 @@ def _build_download_command(request: dict[str, Any], downloads_path: Path) -> li
         '--progress-template', 'download:[download] %(progress._percent_str)s of %(progress._total_bytes_str)s at %(progress._speed_str)s ETA %(progress._eta_str)s',
         '--paths', f'home:{downloads_path}',
         '--print', 'after_move:%(filepath)s',
+        '--embed-metadata',  # Embeds all available metadata (title, uploader, URL, description, upload date, etc.)
+        '--embed-thumbnail',  # Downloads and embeds the video thumbnail as poster image
     ]
 
     if request['type'] == 'download-clip':

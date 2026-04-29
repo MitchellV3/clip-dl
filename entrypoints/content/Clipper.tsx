@@ -645,7 +645,6 @@ const ClipIcon = () => (
   </svg>
 )
 
-//TODO: When a download fails, allow the user to click a 'retry' button that attempts to download the same clip again with the same settings without needing to reconfigure the options
 export default function Clipper() {
   const [isOpen, setIsOpen] = useState(false)
   const [qualityFormats, setQualityFormats] = useState<{ label: string; value: string }[]>([])
