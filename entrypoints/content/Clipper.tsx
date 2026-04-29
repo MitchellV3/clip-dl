@@ -797,6 +797,7 @@ export default function Clipper() {
       const opened = await clipDownloader.showDownloadedClipInFolder(result.outputPath)
       if (!opened) {
         toaster.error({
+          type: 'error',
           title: 'File not found',
           description: 'Could not find the downloaded clip in the selected folder.',
           duration: 5000,
@@ -805,6 +806,7 @@ export default function Clipper() {
       }
     } catch {
       toaster.error({
+        type: 'error',
         title: 'Folder access denied',
         description: 'Cannot access the folder to show the downloaded clip.',
         duration: 5000,
@@ -816,6 +818,7 @@ export default function Clipper() {
   const enqueueDownload = useCallback((request: ClipDownloadRequest) => {
     if (isQueueFull) {
       toaster.create({
+        type: 'error',
         title: 'Queue full',
         description: `Maximum ${MAX_QUEUE_SIZE} downloads can be queued. Wait for some to complete before adding more.`,
         duration: 4000,
@@ -839,6 +842,7 @@ export default function Clipper() {
 
     // Show queued toast with position
     toaster.create({
+      type: 'info',
       id: toastId,
       title: 'Download queued',
       description: `Position ${nextQueue.length}/${MAX_QUEUE_SIZE} in queue`,
@@ -859,6 +863,10 @@ export default function Clipper() {
         : request,
     })
   }, [downloadQueue, isQueueFull])
+
+  const handleRetry = useCallback((request: ClipDownloadRequest) => {
+    enqueueDownload(request)
+  }, [enqueueDownload])
 
   // Process queue: execute next pending job
   useEffect(() => {
@@ -887,6 +895,7 @@ export default function Clipper() {
       // Dismiss queued toast and show loading toast
       toaster.dismiss(pendingJob.toastId)
       toaster.loading({
+        type: 'loading',
         id: pendingJob.toastId,
         title: loadingTitle,
         description: loadingDescription,
@@ -912,16 +921,15 @@ export default function Clipper() {
       emitPageDebugLog({ stage: 'download-result', jobId: pendingJob.id, result })
 
       // Show final toast
-      toaster.dismiss(pendingJob.toastId)
-
       if (result?.ok) {
-        toaster.success({
+        toaster.update(pendingJob.toastId, {
+          type: 'success',
           title: 'Success',
           description: `Saved ${result.fileName} to Downloads.`,
           duration: 8000,
           closable: true,
           action: {
-            label: 'Show file',
+            label: 'Show File in Folder',
             onClick: () => {
               void openFileLocation(result)
             },
@@ -929,18 +937,32 @@ export default function Clipper() {
         })
       } else if (result) {
         if (result.code === 'insufficient-disk-space' || result.code === 'low-disk-space') {
-          toaster.error({
+          toaster.update(pendingJob.toastId, {
+            type: 'error',
             title: 'Insufficient disk space',
             description: result.message,
             duration: 10000,
             closable: true,
+            action: {
+              label: 'Retry',
+              onClick: () => {
+                void handleRetry(pendingJob.request)
+              },
+            },
           })
         } else {
-          toaster.error({
+          toaster.update(pendingJob.toastId, {
+            type: 'error',
             title: pendingJob.request.type === 'download-full-video' ? 'Full video download failed' : 'Clip download failed',
             description: result.message,
             duration: 10000,
             closable: true,
+            action: {
+              label: 'Retry',
+              onClick: () => {
+                void handleRetry(pendingJob.request)
+              },
+            },
           })
         }
       }
@@ -974,6 +996,7 @@ export default function Clipper() {
     const videoElement = getActiveVideoElement()
     if (!videoElement) {
       toaster.create({
+        type: 'error',
         title: 'Video not found',
         description: 'clip-dl could not find the active YouTube video element on this page.',
         duration: 5000,
@@ -1004,6 +1027,7 @@ export default function Clipper() {
     const videoElement = getActiveVideoElement()
     if (!videoElement) {
       toaster.create({
+        type: 'error',
         title: 'Video not found',
         description: 'clip-dl could not find the active YouTube video element on this page.',
         duration: 5000,
@@ -1021,6 +1045,7 @@ export default function Clipper() {
     const videoElement = getActiveVideoElement()
     if (!videoElement) {
       toaster.create({
+        type: 'error',
         title: 'Video not found',
         description: 'clip-dl could not find the active YouTube video element on this page.',
         duration: 5000,
@@ -1047,6 +1072,7 @@ export default function Clipper() {
 
     if (!resolvedRange) {
       toaster.create({
+        type: 'error',
         title: 'Invalid selection',
         description: 'Set an end time, or both start and end times, before downloading a custom clip.',
         duration: 5000,
