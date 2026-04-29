@@ -22,7 +22,7 @@ export const Toaster = () => {
         {(toast) => (
           <Toast.Root
             width={"400px"}
-            backgroundColor={toast.title === "Success" ? "green.800" : "blackAlpha.800"}
+            backgroundColor={toast.type === "error" ? "red.800" : toast.type === "success" ? "green.800" : toast.type === "loading" ? "blue.800" : toast.type === "info" ? "gray.800" : "whiteAlpha.800"}
             color={"white"}
             borderRadius={"md"}
             padding={"10px 15px"}
@@ -74,7 +74,6 @@ export const Toaster = () => {
                 justifyContent={"center"}
                 border={"1px solid rgba(255, 255, 255, 0.2)"}
                 _hover={{ background: "whiteAlpha.200", borderColor: "white" }}
-                //onClick={toast.action.onClick}
                 transition={"background 0.2s ease-in-out, border-color 0.2s ease-in-out"}
 
               >
