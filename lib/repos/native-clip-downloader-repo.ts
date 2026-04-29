@@ -1,3 +1,5 @@
+import { saveDownloadHistoryEntry } from './download-history-repo'
+
 const NATIVE_HOST_NAME = 'com.clip_dl.clip_downloader'
 
 export interface ClipRangeDownloadRequest {
@@ -107,11 +109,26 @@ export function NativeClipDownloaderRepo() {
             // through it because Chrome only exposes sendNativeMessage to extension
             // pages and the background/service-worker context.
             const response = await browser.runtime.sendNativeMessage(NATIVE_HOST_NAME, payload)
+            const normalizedResponse = response as ClipDownloadResult
 
-            return response as ClipDownloadResult
+            try {
+                await saveDownloadHistoryEntry(payload, normalizedResponse)
+            } catch (historyError) {
+                console.warn('[clip-dl] Failed to save download history entry:', historyError)
+            }
+
+            return normalizedResponse
         } catch (error) {
             console.warn('[clip-dl] Native clip downloader error:', error)
-            return normalizeNativeError(error)
+            const normalizedError = normalizeNativeError(error)
+
+            try {
+                await saveDownloadHistoryEntry(payload, normalizedError)
+            } catch (historyError) {
+                console.warn('[clip-dl] Failed to save failed download history entry:', historyError)
+            }
+
+            return normalizedError
         }
     }
 
