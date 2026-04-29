@@ -182,16 +182,18 @@ export function DownloadHistoryList({
                                     >
                                         Show file
                                     </Button>
-                                    <Button
-                                        size="sm"
-                                        bg="whiteAlpha.100"
-                                        border="none"
-                                        _hover={{ backgroundColor: 'whiteAlpha.200' }}
-                                        onClick={() => onRetry(entry)}
-                                        disabled={busy}
-                                    >
-                                        Retry
-                                    </Button>
+                                    {entry.status === 'error' && (
+                                        <Button
+                                            size="sm"
+                                            bg="whiteAlpha.100"
+                                            border="none"
+                                            _hover={{ backgroundColor: 'whiteAlpha.200' }}
+                                            onClick={() => onRetry(entry)}
+                                            disabled={busy}
+                                        >
+                                            Retry
+                                        </Button>
+                                    )}
                                     <Button
                                         size="sm"
                                         bg="whiteAlpha.100"
