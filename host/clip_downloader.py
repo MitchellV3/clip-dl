@@ -83,7 +83,6 @@ def _error_response(code: str, message: str) -> dict[str, Any]:
         'message': message,
     }
 
-#TODO: Add clip queue system to allow multiple downloads at once, queued to download one after another. There should be multiple toasts for each download with real-time status updates.
 def _validate_download_request_fields(message: dict[str, Any], label_error_message: str) -> tuple[str | None, str | None, bool | None, dict[str, Any] | None]:
     url = message.get('url')
     label = message.get('label')
@@ -505,8 +504,38 @@ def _extract_output_path(stdout: str) -> Path | None:
     return None
 
 
+def _is_process_alive(pid: int) -> bool:
+    """Check if a process with the given PID is still alive (Windows-safe)."""
+    try:
+        # On Windows, os.kill with signal 0 can be used to check if process exists
+        # This does not actually send a signal, just checks process validity
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
+
+
+def _clear_stale_lock() -> None:
+    """Remove a lock file if it belongs to a dead process."""
+    if not LOCK_FILE_PATH.exists():
+        return
+    
+    try:
+        lock_content = LOCK_FILE_PATH.read_text(encoding='utf-8', errors='replace').strip()
+        if lock_content.isdigit():
+            locked_pid = int(lock_content)
+            if not _is_process_alive(locked_pid):
+                logger.warning(f'Clearing stale lock from dead process {locked_pid}')
+                LOCK_FILE_PATH.unlink()
+    except Exception as e:
+        logger.warning(f'Failed to check lock staleness: {e}')
+
+
 @contextmanager
 def _single_download_lock() -> Iterator[None]:
+    # First, check for and clear any stale locks
+    _clear_stale_lock()
+    
     try:
         file_descriptor = os.open(str(LOCK_FILE_PATH), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     except FileExistsError as error:

@@ -659,7 +659,6 @@ export default function Clipper() {
 
   // Derived state for button disabling
   const isQueueFull = downloadQueue.length >= MAX_QUEUE_SIZE
-  const isProcessingQueue = activeJobId !== null
   const shouldDisableDownloadButtons = isQueueFull
 
   useEffect(() => {
@@ -912,28 +911,6 @@ export default function Clipper() {
 
       emitPageDebugLog({ stage: 'download-result', jobId: pendingJob.id, result })
 
-      // Update queue with result
-      setDownloadQueue((prev) =>
-        prev.map((job) => {
-          if (job.id !== pendingJob.id) return job
-          if (!result) {
-            return {
-              ...job,
-              status: 'failed',
-              error: { code: 'unknown-error', message: 'No result received' },
-            }
-          }
-          if (result.ok) {
-            return { ...job, status: 'success', result }
-          }
-          return {
-            ...job,
-            status: 'failed',
-            error: { code: result.code, message: result.message },
-          }
-        })
-      )
-
       // Show final toast
       toaster.dismiss(pendingJob.toastId)
 
@@ -967,6 +944,9 @@ export default function Clipper() {
           })
         }
       }
+
+      // Remove finished work from the live queue so the UI can accept new jobs.
+      setDownloadQueue((prev) => prev.filter((job) => job.id !== pendingJob.id))
 
       // Clear active job to allow processor to pick next one
       setActiveJobId(null)
