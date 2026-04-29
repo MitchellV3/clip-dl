@@ -21,7 +21,7 @@ export const Toaster = () => {
       <ChakraToaster toaster={toaster} insetInline={{ mdDown: "4" }} gap={4}>
         {(toast) => (
           <Toast.Root
-            width={"250px"}
+            width={"400px"}
             backgroundColor={toast.title === "Success" ? "green.800" : "blackAlpha.800"}
             color={"white"}
             borderRadius={"md"}
