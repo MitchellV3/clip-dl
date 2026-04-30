@@ -1,8 +1,9 @@
 import { useState, useCallback, useEffect } from 'react'
-import { Box, Popover, Button, Text, Bleed, NativeSelect, Spinner } from '@chakra-ui/react'
+import { Box, Popover, Button, Text, Bleed, Spinner } from '@chakra-ui/react'
 import { createProxyService } from '@webext-core/proxy-service'
 import { toaster } from '@/components/ui/toaster'
 import { CLIP_DOWNLOADER_KEY } from '@/lib/services/proxy-service-keys'
+import { playSfx } from '@/lib/services/sfx'
 import type { ClipDownloadRequest, ClipDownloadResult, ClipRangeDownloadRequest, FullVideoDownloadRequest } from '@/lib/repos/native-clip-downloader-repo'
 import './style.css'
 
@@ -322,7 +323,64 @@ function QualitySelector({
           fontWeight={500}
         >
           <Box display={'flex'} justifyContent={"space-between"} gap={'8px'}>
-            <Text>Video Quality</Text>
+            <label id={'clip-dl-quality-label'} className={'clip-dl-quality-label'}>
+              <Text>Video Quality</Text>
+              <select
+                id={'clip-dl-quality'}
+                className={'clip-dl-quality-select'}
+                title={disabled ? 'Quality selector disabled during audio-only mode' : 'Quality selector'}
+                aria-label={disabled ? 'Quality selector disabled during audio-only mode' : 'Quality selector'}
+                aria-labelledby={'clip-dl-quality-label'}
+                value={selectedValue || ''}
+                disabled={disabled || loading || error !== null}
+                onChange={(e) => {
+                  // Only allow selection change if not disabled, not loading, and no error
+                  if (!disabled && !loading && error === null) {
+                    const newValue = e.currentTarget.value
+                    if (newValue) {
+                      onSelectionChange(newValue)
+                    }
+                  }
+                }}
+              >
+                {loading && (
+                  <option title='Loading'
+                    label='Loading formats...'
+                    value="">
+                    Loading formats...
+                  </option>
+                )}
+                {error && !loading && (
+                  <option title='Error'
+                    label='Error loading formats'
+                    value=""
+                    className={'clip-dl-select-option-error'}
+                  >
+                    Error: {error}
+                  </option>
+                )}
+                {!loading && !error && formats.length === 0 && (
+                  <option title='No formats'
+                    label='No formats detected'
+                    value=""
+                    className={'clip-dl-select-option-error'}
+                  >
+                    No formats detected
+                  </option>
+                )}
+                {!loading && !error && formats.length > 0 && (
+                  <>
+                    {formats.map((fmt) => (
+                      <option title={fmt.label}
+                        key={fmt.value}
+                        value={fmt.value}>
+                        {fmt.label}
+                      </option>
+                    ))}
+                  </>
+                )}
+              </select>
+            </label>
             {loading && (
               <Box display={'flex'} alignItems={'center'} marginLeft={'8px'}>
                 <Text>Loading...</Text>
@@ -330,77 +388,6 @@ function QualitySelector({
             )}
           </Box>
         </Box>
-        <NativeSelect.Root
-          size={'lg'}
-          padding={'8px 12px 8px'}
-        >
-          <NativeSelect.Field
-            placeholder={"Select quality"}
-            backgroundColor={'rgba(255, 255, 255, 0.05)'}
-            color={'#e2e2e2'}
-            border={'1px solid rgba(255, 255, 255, 0.2)'}
-            borderRadius={'4px'}
-            cursor={disabled || loading || error !== null ? 'not-allowed' : 'pointer'}
-            fontSize={'12px'}
-            outline={'none'}
-            width={'calc(100% - 24px)'}
-            transition={'all 0.2s ease'}
-            //padding='16px 12px'
-            title={disabled ? 'Quality selector disabled during audio-only mode' : 'Quality selector'}
-            aria-label={disabled ? 'Quality selector disabled during audio-only mode' : 'Quality selector'}
-            value={selectedValue || ''}
-            onChange={(e) => {
-              // Only allow selection change if not disabled, not loading, and no error
-              if (!disabled && !loading && error === null) {
-                const newValue = e.target.value
-                if (newValue) {
-                  onSelectionChange(newValue)
-                }
-              }
-            }}
-            opacity={disabled || loading || error !== null ? 0.6 : 1}
-            pointerEvents={disabled || loading || error !== null ? 'none' : 'auto'}
-
-          >
-            {loading && (
-              <option title='Loading'
-                label='Loading formats...'
-                value="">
-                Loading formats...
-              </option>
-            )}
-            {error && !loading && (
-              <option title='Error'
-                label='Error loading formats'
-                value=""
-                style={{ color: '#ef4444' }}
-              >
-                Error: {error}
-              </option>
-            )}
-            {!loading && !error && formats.length === 0 && (
-              <option title='No formats'
-                label='No formats detected'
-                value=""
-                style={{ color: '#ef4444' }}
-              >
-                No formats detected
-              </option>
-            )}
-            {!loading && !error && formats.length > 0 && (
-              <>
-                {formats.map((fmt) => (
-                  <option title={fmt.label}
-                    key={fmt.value}
-                    value={fmt.value}>
-                    {fmt.label}
-                  </option>
-                ))}
-              </>
-            )}
-          </NativeSelect.Field>
-          <NativeSelect.Indicator marginRight={'42px'} />
-        </NativeSelect.Root>
       </Box>
     </Box>
   )
@@ -633,11 +620,7 @@ function TimeSelection({
 }
 
 const ClipIcon = () => (
-  <svg filter="drop-shadow(0 0 1px rgba(0, 0, 0, .8))" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#ffffff"
-    style={{
-      height: '60%',
-      width: 'auto',
-    }}>
+  <svg className={'clip-dl-icon'} filter="drop-shadow(0 0 1px rgba(0, 0, 0, .8))" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#ffffff">
     <g fill="none" stroke="#ffffff" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5">
       <path d="M.763 8.25a2.25 2.25 0 1 0 4.5 0a2.25 2.25 0 0 0-4.5 0m0 8.196a2.25 2.25 0 1 0 4.499 0a2.25 2.25 0 0 0-4.499 0" />
       <path d="m2.34 10.397l7.391 4.381l4.201 2.489M2.34 14.3l4.317-2.559m3.08.259V2.25a1.5 1.5 0 0 1 1.5-1.5h12m0 22.5h-12a1.5 1.5 0 0 1-1.5-1.5V18m4.5-8.25v-9m0 22.5v-3m-4.5-15h4.5m9 9V.75m0 22.5v-9m-13.5-4.5h13.5m-7.5 4.5h7.5" />
@@ -768,6 +751,7 @@ export default function Clipper() {
     event.stopPropagation()
 
     if (window.clip_isExtensionContextValid && !window.clip_isExtensionContextValid()) {
+      playSfx('error')
       if (window.clip_handleInvalidContext) window.clip_handleInvalidContext()
       return
     }
@@ -802,6 +786,7 @@ export default function Clipper() {
           duration: 5000,
           closable: true,
         })
+        playSfx('error')
       }
     } catch {
       toaster.error({
@@ -811,6 +796,7 @@ export default function Clipper() {
         duration: 5000,
         closable: true,
       })
+      playSfx('error')
     }
   }, [])
 
@@ -823,6 +809,7 @@ export default function Clipper() {
         duration: 4000,
         closable: true,
       })
+      playSfx('error')
       return
     }
 
@@ -848,6 +835,7 @@ export default function Clipper() {
       duration: 3000,
       closable: true,
     })
+    playSfx('start_recording')
 
     emitPageDebugLog({
       stage: 'download-queued',
@@ -934,6 +922,7 @@ export default function Clipper() {
             },
           },
         })
+        playSfx('success')
       } else if (result) {
         if (result.code === 'insufficient-disk-space' || result.code === 'low-disk-space') {
           toaster.update(pendingJob.toastId, {
@@ -949,6 +938,7 @@ export default function Clipper() {
               },
             },
           })
+          playSfx('error')
         } else {
           toaster.update(pendingJob.toastId, {
             type: 'error',
@@ -963,6 +953,7 @@ export default function Clipper() {
               },
             },
           })
+          playSfx('error')
         }
       }
 
@@ -1001,6 +992,7 @@ export default function Clipper() {
         duration: 5000,
         closable: true,
       })
+      playSfx('error')
       return
     }
 
@@ -1032,12 +1024,14 @@ export default function Clipper() {
         duration: 5000,
         closable: true,
       })
+      playSfx('error')
       return
     }
 
     const nextSelection = applyStartTimeSelection(videoElement.currentTime)
     setTimeSelection(nextSelection)
     emitPageDebugLog({ stage: 'time-selection-updated', source: 'set-start-time', selection: nextSelection })
+    playSfx('start_recording')
   }, [])
 
   const handleSetEndTime = useCallback(() => {
@@ -1050,12 +1044,14 @@ export default function Clipper() {
         duration: 5000,
         closable: true,
       })
+      playSfx('error')
       return
     }
 
     const nextSelection = applyEndTimeSelection(videoElement.currentTime)
     setTimeSelection(nextSelection)
     emitPageDebugLog({ stage: 'time-selection-updated', source: 'set-end-time', selection: nextSelection })
+    playSfx('stop_recording')
   }, [])
 
   const handleCancelTimeSelection = useCallback(() => {
@@ -1077,6 +1073,7 @@ export default function Clipper() {
         duration: 5000,
         closable: true,
       })
+      playSfx('error')
       return
     }
 
@@ -1153,7 +1150,9 @@ export default function Clipper() {
     }
     window.clip_updateQualityOptionsError = (message: string) => setFormatError(message)
     window.clip_isExtensionContextValid = () => true
-    window.clip_handleInvalidContext = () => { }
+    window.clip_handleInvalidContext = () => {
+      playSfx('error')
+    }
     window.clip_handleClipOptionClick = (_event: MouseEvent) => { }
   }, [])
 

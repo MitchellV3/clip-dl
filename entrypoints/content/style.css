@@ -135,3 +135,37 @@
     justify-content: center;
     flex-direction: row;
 }
+
+.clip-dl-select-option-error {
+    color: #ef4444;
+}
+
+.clip-dl-quality-label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1 1 auto;
+}
+
+.clip-dl-quality-select {
+    background-color: rgba(255, 255, 255, 0.05);
+    color: #e2e2e2;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    outline: none;
+    width: 100%;
+    transition: all 0.2s ease;
+    padding: 8px 12px;
+}
+
+.clip-dl-quality-select:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.clip-dl-icon {
+    height: 60%;
+    width: auto;
+}

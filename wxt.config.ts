@@ -8,6 +8,12 @@ export default defineConfig({
     name: 'clip-dl',
     description: 'description',
     permissions: ['nativeMessaging', "storage", "downloads"],
+    web_accessible_resources: [
+      {
+        matches: ['https://www.youtube.com/*'],
+        resources: ['/sfx/*.wav'],
+      },
+    ],
 
   },
   vite: () => ({
