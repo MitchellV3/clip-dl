@@ -315,6 +315,7 @@ function QualitySelector({
         display={'flex'}
         flexDirection={'column'}
         gap={'4px'}
+        marginBottom={"12px"}
       >
         <Box
           color={'#e2e2e2'}
@@ -326,6 +327,7 @@ function QualitySelector({
           <Box display={'flex'} justifyContent={"space-between"} gap={'8px'}>
             <label id={'clip-dl-quality-label'} className={'clip-dl-quality-label'}>
               <Text>Video Quality</Text>
+
               <select
                 id={'clip-dl-quality'}
                 className={'clip-dl-quality-select'}
@@ -382,11 +384,7 @@ function QualitySelector({
                 )}
               </select>
             </label>
-            {loading && (
-              <Box display={'flex'} alignItems={'center'} marginLeft={'8px'}>
-                <Text>Loading...</Text>
-              </Box>
-            )}
+
           </Box>
         </Box>
       </Box>
