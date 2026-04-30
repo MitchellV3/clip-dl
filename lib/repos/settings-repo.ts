@@ -17,6 +17,10 @@ export const organizeBySourceSetting = storage.defineItem('local:organizeBySourc
     fallback: false,
 });
 
+export const downloadDirectorySetting = storage.defineItem('local:downloadDirectory', {
+    fallback: '',
+});
+
 // Getter functions
 export async function getPlaySfxEnabled(): Promise<boolean> {
     return await playSfxEnabledSetting.getValue();
@@ -72,6 +76,23 @@ export function watchOrganizeByDate(callback: (value: boolean) => void) {
 
 export function watchOrganizeBySource(callback: (value: boolean) => void) {
     return organizeBySourceSetting.watch((newValue) => {
+        callback(newValue);
+    });
+}
+
+// Download directory functions
+export async function getDownloadDirectory(): Promise<string> {
+    const value = await downloadDirectorySetting.getValue();
+    console.warn(`[clip-dl] getDownloadDirectory() => "${value}"`);
+    return value;
+}
+
+export async function setDownloadDirectory(path: string): Promise<void> {
+    await downloadDirectorySetting.setValue(path);
+}
+
+export function watchDownloadDirectory(callback: (value: string) => void) {
+    return downloadDirectorySetting.watch((newValue) => {
         callback(newValue);
     });
 }

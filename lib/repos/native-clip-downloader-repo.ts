@@ -1,4 +1,5 @@
 import { saveDownloadHistoryEntry } from './download-history-repo'
+import { getDownloadDirectory } from './settings-repo'
 
 const NATIVE_HOST_NAME = 'com.clip_dl.clip_downloader'
 
@@ -13,6 +14,7 @@ export interface ClipRangeDownloadRequest {
     showLiveProcessLog?: boolean
     organizeByDate?: boolean
     organizeBySource?: boolean
+    downloadsPath?: string
 }
 
 export interface FullVideoDownloadRequest {
@@ -24,6 +26,7 @@ export interface FullVideoDownloadRequest {
     showLiveProcessLog?: boolean
     organizeByDate?: boolean
     organizeBySource?: boolean
+    downloadsPath?: string
 }
 
 export type ClipDownloadRequest = ClipRangeDownloadRequest | FullVideoDownloadRequest
@@ -111,11 +114,14 @@ function normalizeNativeError(error: unknown): FailedClipDownloadResult {
 export function NativeClipDownloaderRepo() {
     const downloadClip = async (payload: ClipDownloadRequest): Promise<ClipDownloadResult> => {
         try {
-            console.log('[clip-dl] Sending native message:', JSON.stringify(payload, null, 2));
+            const downloadsPath = await getDownloadDirectory();
+            const requestPayload = { ...payload, downloadsPath } as ClipDownloadRequest;
+            console.warn(`[clip-dl] downloadClip: downloadsPath="${downloadsPath}", type=${requestPayload.type}`);
+            console.warn(`[clip-dl] Native message payload: ${JSON.stringify(requestPayload)}`);
             // The background script owns native messaging. Content scripts must proxy
             // through it because Chrome only exposes sendNativeMessage to extension
             // pages and the background/service-worker context.
-            const response = await browser.runtime.sendNativeMessage(NATIVE_HOST_NAME, payload)
+            const response = await browser.runtime.sendNativeMessage(NATIVE_HOST_NAME, requestPayload)
             const normalizedResponse = response as ClipDownloadResult
 
             try {

@@ -7,7 +7,7 @@ import {
     type DownloadHistoryPage,
     type DownloadHistoryStatus,
 } from '@/lib/repos/download-history-repo';
-import { getPlaySfxEnabled, setPlaySfxEnabled, getShowLiveProcessLog, setShowLiveProcessLog, watchPlaySfxEnabled, watchShowLiveProcessLog, getOrganizeByDate, setOrganizeByDate, getOrganizeBySource, setOrganizeBySource, watchOrganizeByDate, watchOrganizeBySource } from '@/lib/repos/settings-repo';
+import { getPlaySfxEnabled, setPlaySfxEnabled, getShowLiveProcessLog, setShowLiveProcessLog, watchPlaySfxEnabled, watchShowLiveProcessLog, getOrganizeByDate, setOrganizeByDate, getOrganizeBySource, setOrganizeBySource, watchOrganizeByDate, watchOrganizeBySource, getDownloadDirectory, setDownloadDirectory, watchDownloadDirectory } from '@/lib/repos/settings-repo';
 import { createProxyService } from '@webext-core/proxy-service';
 import { Box, Button, CheckboxCard, CheckboxGroup, Field, Grid, Heading, HStack, Input, Text, VStack } from '@chakra-ui/react';
 import type { ChangeEvent } from 'react';
@@ -30,6 +30,7 @@ export default function App() {
     const [organizeByDate, setOrganizeByDateState] = useState(false);
     const [organizeBySource, setOrganizeBySourceState] = useState(false);
     const [selectedOrganize, setSelectedOrganize] = useState<string[]>([]);
+    const [downloadDirectory, setDownloadDirectoryState] = useState('');
 
     const checkboxItems = [
         { value: 'date', title: 'Date', description: 'Organize clips by date (Year -> Month)' },
@@ -80,6 +81,8 @@ export default function App() {
             setOrganizeByDateState(orgDate);
             const orgSource = await getOrganizeBySource();
             setOrganizeBySourceState(orgSource);
+            const dlDir = await getDownloadDirectory();
+            setDownloadDirectoryState(dlDir);
             setSelectedOrganize([
                 orgDate ? 'date' : null,
                 orgSource ? 'source' : null,
@@ -101,6 +104,9 @@ export default function App() {
         watchOrganizeBySource((value) => {
             setOrganizeBySourceState(value);
             setSelectedOrganize(prev => value ? [...prev, 'source'] : prev.filter(v => v !== 'source'));
+        });
+        watchDownloadDirectory((value) => {
+            setDownloadDirectoryState(value);
         });
     }, []);
 
@@ -177,6 +183,11 @@ export default function App() {
         ]);
     }, []);
 
+    const handleDownloadDirectoryChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+        setDownloadDirectoryState(e.target.value);
+        void setDownloadDirectory(e.target.value);
+    }, []);
+
     const totalPages = historyPage ? Math.max(1, Math.ceil(historyPage.total / HISTORY_PAGE_SIZE)) : 1;
 
     return (
@@ -191,7 +202,7 @@ export default function App() {
                                 Download Directory:
                             </Field.Label>
                             <HStack gap="2" width="100%">
-                                <Input type="text" id="download-directory" placeholder="Default Directory" variant="subtle" size="md" border="1px whiteAlpha.100 solid" borderRadius="md" bg="whiteAlpha.100" />
+                                <Input type="text" id="download-directory" placeholder="Default Directory" variant="subtle" size="md" border="1px whiteAlpha.100 solid" borderRadius="md" bg="whiteAlpha.100" value={downloadDirectory} onChange={handleDownloadDirectoryChange} />
                                 <Button id="browse" border="1px whiteAlpha.100 solid" borderRadius="md" size="lg" bg="whiteAlpha.100" _hover={{ backgroundColor: 'whiteAlpha.200' }}>Browse</Button>
                             </HStack>
                         </Field.Root>

@@ -247,10 +247,14 @@ def _validate_download_clip_request(message: dict[str, Any]) -> tuple[dict[str, 
         'organizeBySource': bool(message.get('organizeBySource', False)),
     }
 
-    # Preserve optional formatSelector if provided
+    # Preserve optional fields if provided
     format_selector = message.get('formatSelector')
     if isinstance(format_selector, str) and format_selector:
         validated_request['formatSelector'] = format_selector
+
+    downloads_path = message.get('downloadsPath')
+    if isinstance(downloads_path, str) and downloads_path:
+        validated_request['downloadsPath'] = downloads_path
 
     return validated_request, None
 
@@ -276,6 +280,15 @@ def _validate_download_full_video_request(message: dict[str, Any]) -> tuple[dict
         'organizeByDate': bool(message.get('organizeByDate', False)),
         'organizeBySource': bool(message.get('organizeBySource', False)),
     }
+
+    # Preserve optional fields if provided
+    format_selector = message.get('formatSelector')
+    if isinstance(format_selector, str) and format_selector:
+        validated_request['formatSelector'] = format_selector
+
+    downloads_path = message.get('downloadsPath')
+    if isinstance(downloads_path, str) and downloads_path:
+        validated_request['downloadsPath'] = downloads_path
 
     # Preserve optional formatSelector if provided
     format_selector = message.get('formatSelector')
@@ -937,8 +950,15 @@ def main() -> int:
         })
         return 0
 
-    downloads_path = Path.home() / 'Downloads'
-    downloads_path.mkdir(parents=True, exist_ok=True)
+    user_downloads_path = request.get('downloadsPath', '')
+    logger.info(f'[DEBUG] downloadsPath from request: "{user_downloads_path}" (type={type(user_downloads_path).__name__})')
+    logger.info(f'[DEBUG] Full request keys: {list(request.keys())}')
+    if user_downloads_path:
+        downloads_path = Path(user_downloads_path)
+        downloads_path.mkdir(parents=True, exist_ok=True)
+    else:
+        downloads_path = Path.home() / 'Downloads'
+        downloads_path.mkdir(parents=True, exist_ok=True)
     logger.debug(f'Downloads path: {downloads_path}')
 
     for tool_name in ('yt-dlp', 'ffmpeg', 'ffprobe'):
