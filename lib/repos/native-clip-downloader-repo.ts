@@ -10,6 +10,7 @@ export interface ClipRangeDownloadRequest {
     label: string
     audioOnly?: boolean
     formatSelector?: string
+    showLiveProcessLog?: boolean
 }
 
 export interface FullVideoDownloadRequest {
@@ -18,6 +19,7 @@ export interface FullVideoDownloadRequest {
     label: string
     audioOnly?: boolean
     formatSelector?: string
+    showLiveProcessLog?: boolean
 }
 
 export type ClipDownloadRequest = ClipRangeDownloadRequest | FullVideoDownloadRequest

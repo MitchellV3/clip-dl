@@ -4,7 +4,7 @@ import { createProxyService } from '@webext-core/proxy-service'
 import { toaster } from '@/components/ui/toaster'
 import { CLIP_DOWNLOADER_KEY } from '@/lib/services/proxy-service-keys'
 import { playSfx } from '@/lib/services/sfx'
-import { getPlaySfxEnabled, watchPlaySfxEnabled } from '@/lib/repos/settings-repo'
+import { getPlaySfxEnabled, watchPlaySfxEnabled, getShowLiveProcessLog, watchShowLiveProcessLog } from '@/lib/repos/settings-repo'
 import type { ClipDownloadRequest, ClipDownloadResult, ClipRangeDownloadRequest, FullVideoDownloadRequest } from '@/lib/repos/native-clip-downloader-repo'
 import './style.css'
 
@@ -640,6 +640,7 @@ export default function Clipper() {
   const [activeJobId, setActiveJobId] = useState<string | null>(null)
   const [timeSelection, setTimeSelection] = useState<ClipTimeSelection>(() => getClipTimeSelection())
   const [sfxEnabled, setSfxEnabled] = useState(true)
+  const [showLiveProcessLogEnabled, setShowLiveProcessLogEnabled] = useState(true)
 
   // Derived state for button disabling
   const isQueueFull = downloadQueue.length >= MAX_QUEUE_SIZE
@@ -681,6 +682,23 @@ export default function Clipper() {
     // Subscribe to setting changes
     const unsubscribe = watchPlaySfxEnabled((value) => {
       setSfxEnabled(value)
+    })
+
+    return () => {
+      if (unsubscribe) unsubscribe()
+    }
+  }, [])
+
+  // Load showLiveProcessLog setting from storage on mount
+  useEffect(() => {
+    const loadShowLiveProcessLogSetting = async () => {
+      const enabled = await getShowLiveProcessLog()
+      setShowLiveProcessLogEnabled(enabled)
+    }
+    void loadShowLiveProcessLogSetting()
+
+    const unsubscribe = watchShowLiveProcessLog((value) => {
+      setShowLiveProcessLogEnabled(value)
     })
 
     return () => {
@@ -916,7 +934,8 @@ export default function Clipper() {
 
       let result: ClipDownloadResult | null = null
       try {
-        result = await clipDownloader.downloadClip(pendingJob.request)
+        const showLiveProcessLog = await getShowLiveProcessLog()
+        result = await clipDownloader.downloadClip({ ...pendingJob.request, showLiveProcessLog })
       } catch (error) {
         result = {
           ok: false,

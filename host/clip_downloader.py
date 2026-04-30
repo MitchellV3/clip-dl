@@ -241,6 +241,7 @@ def _validate_download_clip_request(message: dict[str, Any]) -> tuple[dict[str, 
         'startTimeSeconds': round(start_time_seconds, 3),
         'endTimeSeconds': round(end_time_seconds, 3),
         'audioOnly': bool(audio_only),
+        'showLiveProcessLog': bool(message.get('showLiveProcessLog', True)),
     }
 
     # Preserve optional formatSelector if provided
@@ -268,6 +269,7 @@ def _validate_download_full_video_request(message: dict[str, Any]) -> tuple[dict
         'url': url,
         'label': label,
         'audioOnly': audio_only,
+        'showLiveProcessLog': bool(message.get('showLiveProcessLog', True)),
     }
 
     # Preserve optional formatSelector if provided
@@ -675,6 +677,70 @@ def _run_visible_download(job_path: Path) -> int:
     return overall_returncode
 
 
+def _run_command_silently(request: dict[str, Any], downloads_path: Path) -> subprocess.CompletedProcess[str]:
+    """Run yt-dlp/ffmpeg silently without spawning a visible console window."""
+    download_command = _build_download_command(request, downloads_path)
+    combined_output: list[str] = []
+
+    logger.info('Starting yt-dlp download stage (silent mode)')
+    download_returncode = 1
+    downloaded_output_path: Path | None = None
+
+    process = subprocess.run(
+        download_command,
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        errors='replace',
+        timeout=3600,
+    )
+    combined_output.append(process.stdout)
+    download_returncode = process.returncode
+
+    if download_returncode == 0:
+        logger.info('yt-dlp download stage completed successfully (silent mode)')
+        downloaded_output_path = _extract_output_path(process.stdout)
+        if downloaded_output_path:
+            logger.info(f'download output path: {downloaded_output_path}')
+    else:
+        logger.error(f'yt-dlp download stage failed with return code {download_returncode} (silent mode)')
+
+    final_output_path: Path | None = None
+    if download_returncode == 0 and request['type'] == 'download-clip' and downloaded_output_path is not None:
+        final_output_path = _derive_final_output_path(downloaded_output_path)
+        audio_only = request.get('audioOnly', False)
+        logger.info(f'Starting ffmpeg remux stage (silent mode): {downloaded_output_path} -> {final_output_path}')
+        remux_command = _build_remux_command(downloaded_output_path, final_output_path, audio_only)
+        remux_process = subprocess.run(
+            remux_command,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            timeout=3600,
+        )
+        combined_output.append(remux_process.stdout)
+        if remux_process.returncode != 0:
+            download_returncode = remux_process.returncode
+            logger.error(f'ffmpeg remux stage failed with return code {remux_process.returncode} (silent mode)')
+        else:
+            logger.info(f'ffmpeg remux stage completed successfully (silent mode): {final_output_path}')
+    elif download_returncode == 0 and request['type'] == 'download-full-video' and downloaded_output_path is not None:
+        final_output_path = downloaded_output_path
+        logger.info(f'Full video download does not require a remux stage (silent mode): {final_output_path}')
+
+    if download_returncode == 0 and request['type'] == 'download-clip' and downloaded_output_path is not None:
+        try:
+            downloaded_output_path.unlink()
+            logger.info(f'Removed temp clip: {downloaded_output_path}')
+        except OSError:
+            logger.warning(f'Failed to remove temp clip {downloaded_output_path}')
+
+    completed_process = subprocess.CompletedProcess(download_command, download_returncode, ''.join(combined_output), ''.join(combined_output))
+    setattr(completed_process, 'resolved_final_output_path', final_output_path)
+    return completed_process
+
+
 def _run_command_with_visible_progress(download_command: list[str], request: dict[str, Any]) -> subprocess.CompletedProcess[str]:
     with tempfile.TemporaryDirectory(prefix='clip-dl-progress-') as temp_directory:
         temp_path = Path(temp_directory)
@@ -854,8 +920,13 @@ def main() -> int:
     try:
         with _single_download_lock():
             download_command = _build_download_command(request, downloads_path)
-            logger.debug(f'Executing with visible progress window: {download_command!r}')
-            completed_process = _run_command_with_visible_progress(download_command, request)
+            show_live = request.get('showLiveProcessLog', True)
+            if show_live:
+                logger.debug(f'Executing with visible progress window: {download_command!r}')
+                completed_process = _run_command_with_visible_progress(download_command, request)
+            else:
+                logger.debug(f'Executing silently (live process log disabled): {download_command!r}')
+                completed_process = _run_command_silently(request, downloads_path)
     except RuntimeError as error:
         if str(error) == 'busy':
             logger.warning('Another download is already running (busy lock)')

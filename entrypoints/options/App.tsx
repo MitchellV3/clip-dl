@@ -26,7 +26,7 @@ export default function App() {
     const [historyQuery, setHistoryQuery] = useState('');
     const [busyEntryId, setBusyEntryId] = useState<string | null>(null);
     const [playSfxEnabled, setPlaySfxEnabledState] = useState(true);
-    const [showLiveProcessLogEnabled, setShowLiveProcessLogState] = useState(true);
+    const [showLiveProcessLogEnabled, setShowLiveProcessLogState] = useState(false);
 
     const checkboxItems = [
         { value: 'date', title: 'Date', description: '(YYYY-MM-DD)' },

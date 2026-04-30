@@ -34,8 +34,8 @@ export function watchPlaySfxEnabled(callback: (value: boolean) => void) {
     });
 }
 
-export function watchShowLiveProcessLog(callback: (value: boolean) => void) {
-    showLiveProcessLogSetting.watch((newValue) => {
+export function watchShowLiveProcessLog(callback: (value: boolean) => void): () => void {
+    return showLiveProcessLogSetting.watch((newValue) => {
         callback(newValue);
     });
 }
