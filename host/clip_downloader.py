@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Iterator
+from urllib.parse import urlparse
 import ctypes
 
 LOCK_FILE_PATH = Path(tempfile.gettempdir()) / 'clip-dl-native-host.lock'
@@ -243,6 +244,7 @@ def _validate_download_clip_request(message: dict[str, Any]) -> tuple[dict[str, 
         'audioOnly': bool(audio_only),
         'showLiveProcessLog': bool(message.get('showLiveProcessLog', True)),
         'organizeByDate': bool(message.get('organizeByDate', False)),
+        'organizeBySource': bool(message.get('organizeBySource', False)),
     }
 
     # Preserve optional formatSelector if provided
@@ -272,6 +274,7 @@ def _validate_download_full_video_request(message: dict[str, Any]) -> tuple[dict
         'audioOnly': audio_only,
         'showLiveProcessLog': bool(message.get('showLiveProcessLog', True)),
         'organizeByDate': bool(message.get('organizeByDate', False)),
+        'organizeBySource': bool(message.get('organizeBySource', False)),
     }
 
     # Preserve optional formatSelector if provided
@@ -425,16 +428,43 @@ def _build_full_video_output_template(request: dict[str, Any]) -> str:
     label_token = _sanitize_file_token(request['label']).lower()
     return f'%(title).180B [%(id)s] {label_token}.%(ext)s'
 
-def _build_download_command(request: dict[str, Any], downloads_path: Path) -> list[str]:
-    audio_only = request.get('audioOnly', False)
+SOURCE_DOMAIN_MAP: dict[str, str] = {
+    'youtube.com': 'YouTube',
+    'twitch.tv': 'Twitch',
+}
+
+
+def _resolve_effective_path(downloads_path: Path, request: dict[str, Any]) -> Path:
     organize_by_date = request.get('organizeByDate', False)
+    organize_by_source = request.get('organizeBySource', False)
 
     effective_path = downloads_path
+
     if organize_by_date:
         now = time.localtime()
         date_subdir = f'{now.tm_year:04d}/{now.tm_mon:02d}'
-        effective_path = downloads_path / date_subdir
-        effective_path.mkdir(parents=True, exist_ok=True)
+        effective_path = effective_path / date_subdir
+        logger.info(f'Path organization: adding date subdir {date_subdir}')
+
+    if organize_by_source:
+        url = request.get('url', '')
+        parsed = urlparse(url)
+        domain = parsed.netloc.lower().removeprefix('www.')
+        source_name = SOURCE_DOMAIN_MAP.get(domain) or domain
+        effective_path = effective_path / source_name
+        logger.info(f'Path organization: adding source subdir {source_name} (domain={domain})')
+    else:
+        logger.info(f'Path organization: organizeBySource={organize_by_source}')
+
+    effective_path.mkdir(parents=True, exist_ok=True)
+    logger.info(f'Effective download path: {effective_path}')
+    return effective_path
+
+
+def _build_download_command(request: dict[str, Any], downloads_path: Path) -> list[str]:
+    audio_only = request.get('audioOnly', False)
+
+    effective_path = _resolve_effective_path(downloads_path, request)
 
     command = [
         'yt-dlp',
@@ -858,6 +888,7 @@ def main() -> int:
         _write_native_message(_error_response('bad-request', 'No native message received.'))
         return 0
 
+    logger.info(f'Raw received message: {json.dumps(message)}')
     logger.debug(f'Received request: type={message.get("type")}')
 
     request, validation_error = _validate_request(message)
@@ -870,6 +901,8 @@ def main() -> int:
         logger.warning('No valid request payload provided.')
         _write_native_message(_error_response('bad-request', 'No valid request payload was provided.'))
         return 0
+
+    logger.info(f'Validated request keys: {list(request.keys())}, organizeBySource={request.get("organizeBySource")!r}')
 
     if request['type'] == 'show-downloaded-clip-in-folder':
         logger.info(f'Showing downloaded clip in folder: {request["outputPath"]}')
@@ -929,6 +962,9 @@ def main() -> int:
 
     if request.get('organizeByDate', False):
         logger.info(f'Date organization enabled for this download')
+
+    if request.get('organizeBySource', False):
+        logger.info(f'Source organization enabled for this download')
 
     try:
         with _single_download_lock():

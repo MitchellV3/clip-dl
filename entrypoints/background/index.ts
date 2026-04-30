@@ -4,7 +4,6 @@ import { DownloadHistoryRepo } from '../../lib/repos/download-history-repo';
 import { NativeClipDownloaderRepo } from '../../lib/repos/native-clip-downloader-repo';
 
 export default defineBackground(() => {
-    console.log('Hello background!', { id: browser.runtime.id })
 
     // proxy-service registration must happen synchronously while the background
     // entrypoint is loading. If this moved behind an await, content scripts could

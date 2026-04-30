@@ -12,6 +12,7 @@ export interface ClipRangeDownloadRequest {
     formatSelector?: string
     showLiveProcessLog?: boolean
     organizeByDate?: boolean
+    organizeBySource?: boolean
 }
 
 export interface FullVideoDownloadRequest {
@@ -22,6 +23,7 @@ export interface FullVideoDownloadRequest {
     formatSelector?: string
     showLiveProcessLog?: boolean
     organizeByDate?: boolean
+    organizeBySource?: boolean
 }
 
 export type ClipDownloadRequest = ClipRangeDownloadRequest | FullVideoDownloadRequest
@@ -109,6 +111,7 @@ function normalizeNativeError(error: unknown): FailedClipDownloadResult {
 export function NativeClipDownloaderRepo() {
     const downloadClip = async (payload: ClipDownloadRequest): Promise<ClipDownloadResult> => {
         try {
+            console.log('[clip-dl] Sending native message:', JSON.stringify(payload, null, 2));
             // The background script owns native messaging. Content scripts must proxy
             // through it because Chrome only exposes sendNativeMessage to extension
             // pages and the background/service-worker context.

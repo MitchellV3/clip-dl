@@ -4,7 +4,7 @@ import { createProxyService } from '@webext-core/proxy-service'
 import { toaster } from '@/components/ui/toaster'
 import { CLIP_DOWNLOADER_KEY } from '@/lib/services/proxy-service-keys'
 import { playSfx } from '@/lib/services/sfx'
-import { getPlaySfxEnabled, watchPlaySfxEnabled, getShowLiveProcessLog, watchShowLiveProcessLog, getOrganizeByDate, watchOrganizeByDate } from '@/lib/repos/settings-repo'
+import { getPlaySfxEnabled, watchPlaySfxEnabled, getShowLiveProcessLog, watchShowLiveProcessLog, getOrganizeByDate, watchOrganizeByDate, getOrganizeBySource, watchOrganizeBySource } from '@/lib/repos/settings-repo'
 import type { ClipDownloadRequest, ClipDownloadResult, ClipRangeDownloadRequest, FullVideoDownloadRequest } from '@/lib/repos/native-clip-downloader-repo'
 import './style.css'
 
@@ -642,6 +642,7 @@ export default function Clipper() {
   const [sfxEnabled, setSfxEnabled] = useState(true)
   const [showLiveProcessLogEnabled, setShowLiveProcessLogEnabled] = useState(true)
   const [organizeByDateEnabled, setOrganizeByDateEnabled] = useState(false)
+  const [organizeBySourceEnabled, setOrganizeBySourceEnabled] = useState(false)
 
   // Derived state for button disabling
   const isQueueFull = downloadQueue.length >= MAX_QUEUE_SIZE
@@ -716,6 +717,24 @@ export default function Clipper() {
 
     const unsubscribe = watchOrganizeByDate((value) => {
       setOrganizeByDateEnabled(value)
+    })
+
+    return () => {
+      if (unsubscribe) unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
+    const loadOrganizeBySourceSetting = async () => {
+      const enabled = await getOrganizeBySource()
+      console.log('[clip-dl] Loaded organizeBySource setting:', enabled)
+      setOrganizeBySourceEnabled(enabled)
+    }
+    void loadOrganizeBySourceSetting()
+
+    const unsubscribe = watchOrganizeBySource((value) => {
+      console.log('[clip-dl] organizeBySource setting changed:', value)
+      setOrganizeBySourceEnabled(value)
     })
 
     return () => {
@@ -856,6 +875,7 @@ export default function Clipper() {
   }, [sfxEnabled])
 
   const enqueueDownload = useCallback((request: ClipDownloadRequest) => {
+    console.log('[clip-dl] Enqueueing download:', { type: request.type, organizeByDate: request.organizeByDate, organizeBySource: request.organizeBySource })
     if (isQueueFull) {
       toaster.create({
         type: 'error',
@@ -952,7 +972,9 @@ export default function Clipper() {
       let result: ClipDownloadResult | null = null
       try {
         const showLiveProcessLog = await getShowLiveProcessLog()
-        result = await clipDownloader.downloadClip({ ...pendingJob.request, showLiveProcessLog })
+        const downloadPayload = { ...pendingJob.request, showLiveProcessLog }
+        console.log('[clip-dl] Calling downloadClip with:', { type: downloadPayload.type, organizeByDate: downloadPayload.organizeByDate, organizeBySource: downloadPayload.organizeBySource })
+        result = await clipDownloader.downloadClip(downloadPayload)
       } catch (error) {
         result = {
           ok: false,
@@ -1044,6 +1066,7 @@ export default function Clipper() {
         label: 'Full Video',
         audioOnly: clipState.audioOnly,
         organizeByDate: organizeByDateEnabled,
+        organizeBySource: organizeBySourceEnabled,
       }
       enqueueDownload(request)
       return
@@ -1073,13 +1096,15 @@ export default function Clipper() {
       label,
       audioOnly: clipState.audioOnly,
       organizeByDate: organizeByDateEnabled,
+      organizeBySource: organizeBySourceEnabled,
     }
+    console.log('[clip-dl] Download request:', { organizeByDate: organizeByDateEnabled, organizeBySource: organizeBySourceEnabled })
     // Add format selector if available and not audio-only
     if (!clipState.audioOnly && clipState.selectedFormatValue) {
       request.formatSelector = clipState.selectedFormatValue
     }
     enqueueDownload(request)
-  }, [enqueueDownload, sfxEnabled, organizeByDateEnabled])
+  }, [enqueueDownload, sfxEnabled, organizeByDateEnabled, organizeBySourceEnabled])
 
   const handleSetStartTime = useCallback(() => {
     const videoElement = getActiveVideoElement()
@@ -1152,13 +1177,14 @@ export default function Clipper() {
       label: CUSTOM_CLIP_LABEL,
       audioOnly: clipState.audioOnly,
       organizeByDate: organizeByDateEnabled,
+      organizeBySource: organizeBySourceEnabled,
     }
     // Add format selector if available and not audio-only
     if (!clipState.audioOnly && clipState.selectedFormatValue) {
       request.formatSelector = clipState.selectedFormatValue
     }
     enqueueDownload(request)
-  }, [enqueueDownload, organizeByDateEnabled])
+  }, [enqueueDownload, organizeByDateEnabled, organizeBySourceEnabled])
 
   useEffect(() => {
     window.clip_getAudioOnly = () => clipState.audioOnly
