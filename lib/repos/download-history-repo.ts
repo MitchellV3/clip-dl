@@ -1,6 +1,7 @@
+import { storage } from '#imports';
 import type { ClipDownloadRequest, ClipDownloadResult } from './native-clip-downloader-repo';
 
-export const DOWNLOAD_HISTORY_STORAGE_KEY = 'downloadHistory';
+const DOWNLOAD_HISTORY_STORAGE_KEY = 'downloadHistory';
 export const DOWNLOAD_HISTORY_RETENTION_LIMIT = 500;
 export const DOWNLOAD_HISTORY_PAGE_SIZE = 10;
 
@@ -40,6 +41,11 @@ export interface DownloadHistoryPage {
     limit: number;
     hasMore: boolean;
 }
+
+// WXT storage item for potential future reactive use in options page
+export const downloadHistoryEntries = storage.defineItem<DownloadHistoryEntry[]>('local:downloadHistory', {
+    fallback: [],
+});
 
 let historyMutationQueue: Promise<void> = Promise.resolve();
 
@@ -180,9 +186,9 @@ export async function getDownloadHistory(query: DownloadHistoryQuery = {}): Prom
 
 export async function saveDownloadHistoryEntry(request: ClipDownloadRequest, result: ClipDownloadResult): Promise<void> {
     await withHistoryLock(async () => {
-        const entries = await readStoredHistory();
+        const currentEntries = await readStoredHistory();
         const createdAt = Date.now();
-        const nextEntries = [createHistoryEntryFromResult(request, result, createdAt), ...entries];
+        const nextEntries = [createHistoryEntryFromResult(request, result, createdAt), ...currentEntries];
 
         await writeStoredHistory(nextEntries);
     });
@@ -190,8 +196,8 @@ export async function saveDownloadHistoryEntry(request: ClipDownloadRequest, res
 
 export async function removeDownloadHistoryEntry(entryId: string): Promise<void> {
     await withHistoryLock(async () => {
-        const entries = await readStoredHistory();
-        await writeStoredHistory(entries.filter((entry) => entry.id !== entryId));
+        const currentEntries = await readStoredHistory();
+        await writeStoredHistory(currentEntries.filter((entry) => entry.id !== entryId));
     });
 }
 

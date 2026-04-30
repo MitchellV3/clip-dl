@@ -265,6 +265,36 @@ export default function App() {
                     </Box>
                 </Box>
 
+
+
+                <Box className="setting-group">
+                    <Heading>Other Settings</Heading>
+                    <HStack height={"8rem"}>
+                        <CheckboxCard.Root value={"playSfx"} bg="whiteAlpha.100" checked={playSfxEnabled} onCheckedChange={(state) => void handlePlaySfxChange(typeof state.checked === 'boolean' ? state.checked : false)} height={"100%"}>
+                            <CheckboxCard.HiddenInput />
+                            <CheckboxCard.Control>
+                                <CheckboxCard.Content>
+                                    <CheckboxCard.Label>Play sound effects</CheckboxCard.Label>
+                                    <CheckboxCard.Description>Adds sound effects that are played on clip creation, successful downloads, errors, etc.</CheckboxCard.Description>
+                                </CheckboxCard.Content>
+                                <CheckboxCard.Indicator />
+                            </CheckboxCard.Control>
+                        </CheckboxCard.Root>
+                        <CheckboxCard.Root value={"showLiveProcessLog"} bg="whiteAlpha.100" checked={showLiveProcessLogEnabled} onCheckedChange={(state) => void handleShowLiveProcessLogChange(typeof state.checked === 'boolean' ? state.checked : false)} height={"100%"}>
+                            <CheckboxCard.HiddenInput />
+                            <CheckboxCard.Control>
+                                <CheckboxCard.Content>
+                                    <CheckboxCard.Label>Show live process log</CheckboxCard.Label>
+                                    <CheckboxCard.Description>When a clip is downloading the live log window will open automatically allowing you to see the download progress.</CheckboxCard.Description>
+                                </CheckboxCard.Content>
+                                <CheckboxCard.Indicator />
+                            </CheckboxCard.Control>
+                        </CheckboxCard.Root>
+                    </HStack>
+                </Box>
+
+
+
                 <Box className="setting-group">
                     <Heading>Download History</Heading>
 
@@ -296,32 +326,6 @@ export default function App() {
                         </Box>
                     </HStack>
 
-
-                    <Box className="setting-group">
-                        <Heading>Other Settings</Heading>
-                        <HStack height={"8rem"}>
-                            <CheckboxCard.Root value={"playSfx"} bg="whiteAlpha.100" checked={playSfxEnabled} onCheckedChange={(state) => void handlePlaySfxChange(typeof state.checked === 'boolean' ? state.checked : false)} height={"100%"}>
-                                <CheckboxCard.HiddenInput />
-                                <CheckboxCard.Control>
-                                    <CheckboxCard.Content>
-                                        <CheckboxCard.Label>Play sound effects</CheckboxCard.Label>
-                                        <CheckboxCard.Description>Adds sound effects that are played on clip creation, successful downloads, errors, etc.</CheckboxCard.Description>
-                                    </CheckboxCard.Content>
-                                    <CheckboxCard.Indicator />
-                                </CheckboxCard.Control>
-                            </CheckboxCard.Root>
-                            <CheckboxCard.Root value={"showLiveProcessLog"} bg="whiteAlpha.100" checked={showLiveProcessLogEnabled} onCheckedChange={(state) => void handleShowLiveProcessLogChange(typeof state.checked === 'boolean' ? state.checked : false)} height={"100%"}>
-                                <CheckboxCard.HiddenInput />
-                                <CheckboxCard.Control>
-                                    <CheckboxCard.Content>
-                                        <CheckboxCard.Label>Show live process log</CheckboxCard.Label>
-                                        <CheckboxCard.Description>When a clip is downloading the live log window will open automatically allowing you to see the download progress.</CheckboxCard.Description>
-                                    </CheckboxCard.Content>
-                                    <CheckboxCard.Indicator />
-                                </CheckboxCard.Control>
-                            </CheckboxCard.Root>
-                        </HStack>
-                    </Box>
 
 
                     <DownloadHistoryList
