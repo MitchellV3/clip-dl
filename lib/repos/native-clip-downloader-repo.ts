@@ -11,6 +11,7 @@ export interface ClipRangeDownloadRequest {
     audioOnly?: boolean
     formatSelector?: string
     showLiveProcessLog?: boolean
+    organizeByDate?: boolean
 }
 
 export interface FullVideoDownloadRequest {
@@ -20,6 +21,7 @@ export interface FullVideoDownloadRequest {
     audioOnly?: boolean
     formatSelector?: string
     showLiveProcessLog?: boolean
+    organizeByDate?: boolean
 }
 
 export type ClipDownloadRequest = ClipRangeDownloadRequest | FullVideoDownloadRequest

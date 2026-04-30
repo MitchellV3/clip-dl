@@ -242,6 +242,7 @@ def _validate_download_clip_request(message: dict[str, Any]) -> tuple[dict[str, 
         'endTimeSeconds': round(end_time_seconds, 3),
         'audioOnly': bool(audio_only),
         'showLiveProcessLog': bool(message.get('showLiveProcessLog', True)),
+        'organizeByDate': bool(message.get('organizeByDate', False)),
     }
 
     # Preserve optional formatSelector if provided
@@ -270,6 +271,7 @@ def _validate_download_full_video_request(message: dict[str, Any]) -> tuple[dict
         'label': label,
         'audioOnly': audio_only,
         'showLiveProcessLog': bool(message.get('showLiveProcessLog', True)),
+        'organizeByDate': bool(message.get('organizeByDate', False)),
     }
 
     # Preserve optional formatSelector if provided
@@ -425,6 +427,14 @@ def _build_full_video_output_template(request: dict[str, Any]) -> str:
 
 def _build_download_command(request: dict[str, Any], downloads_path: Path) -> list[str]:
     audio_only = request.get('audioOnly', False)
+    organize_by_date = request.get('organizeByDate', False)
+
+    effective_path = downloads_path
+    if organize_by_date:
+        now = time.localtime()
+        date_subdir = f'{now.tm_year:04d}/{now.tm_mon:02d}'
+        effective_path = downloads_path / date_subdir
+        effective_path.mkdir(parents=True, exist_ok=True)
 
     command = [
         'yt-dlp',
@@ -435,7 +445,7 @@ def _build_download_command(request: dict[str, Any], downloads_path: Path) -> li
         '--progress',
         # This template forces a newline and a specific format Python can't miss
         '--progress-template', 'download:[download] %(progress._percent_str)s of %(progress._total_bytes_str)s at %(progress._speed_str)s ETA %(progress._eta_str)s',
-        '--paths', f'home:{downloads_path}',
+        '--paths', f'home:{effective_path}',
         '--print', 'after_move:%(filepath)s',
         '--embed-metadata',  # Embeds all available metadata (title, uploader, URL, description, upload date, etc.)
         '--embed-thumbnail',  # Downloads and embeds the video thumbnail as poster image
@@ -916,6 +926,9 @@ def main() -> int:
         logger.info(f'Processing download-clip request: url={request["url"]}, label={request["label"]}, start={request["startTimeSeconds"]}, end={request["endTimeSeconds"]}')
     else:
         logger.info(f'Processing download-full-video request: url={request["url"]}, label={request["label"]}')
+
+    if request.get('organizeByDate', False):
+        logger.info(f'Date organization enabled for this download')
 
     try:
         with _single_download_lock():

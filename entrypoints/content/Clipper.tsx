@@ -4,7 +4,7 @@ import { createProxyService } from '@webext-core/proxy-service'
 import { toaster } from '@/components/ui/toaster'
 import { CLIP_DOWNLOADER_KEY } from '@/lib/services/proxy-service-keys'
 import { playSfx } from '@/lib/services/sfx'
-import { getPlaySfxEnabled, watchPlaySfxEnabled, getShowLiveProcessLog, watchShowLiveProcessLog } from '@/lib/repos/settings-repo'
+import { getPlaySfxEnabled, watchPlaySfxEnabled, getShowLiveProcessLog, watchShowLiveProcessLog, getOrganizeByDate, watchOrganizeByDate } from '@/lib/repos/settings-repo'
 import type { ClipDownloadRequest, ClipDownloadResult, ClipRangeDownloadRequest, FullVideoDownloadRequest } from '@/lib/repos/native-clip-downloader-repo'
 import './style.css'
 
@@ -641,6 +641,7 @@ export default function Clipper() {
   const [timeSelection, setTimeSelection] = useState<ClipTimeSelection>(() => getClipTimeSelection())
   const [sfxEnabled, setSfxEnabled] = useState(true)
   const [showLiveProcessLogEnabled, setShowLiveProcessLogEnabled] = useState(true)
+  const [organizeByDateEnabled, setOrganizeByDateEnabled] = useState(false)
 
   // Derived state for button disabling
   const isQueueFull = downloadQueue.length >= MAX_QUEUE_SIZE
@@ -699,6 +700,22 @@ export default function Clipper() {
 
     const unsubscribe = watchShowLiveProcessLog((value) => {
       setShowLiveProcessLogEnabled(value)
+    })
+
+    return () => {
+      if (unsubscribe) unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
+    const loadOrganizeByDateSetting = async () => {
+      const enabled = await getOrganizeByDate()
+      setOrganizeByDateEnabled(enabled)
+    }
+    void loadOrganizeByDateSetting()
+
+    const unsubscribe = watchOrganizeByDate((value) => {
+      setOrganizeByDateEnabled(value)
     })
 
     return () => {
@@ -1026,6 +1043,7 @@ export default function Clipper() {
         url: window.location.href,
         label: 'Full Video',
         audioOnly: clipState.audioOnly,
+        organizeByDate: organizeByDateEnabled,
       }
       enqueueDownload(request)
       return
@@ -1054,13 +1072,14 @@ export default function Clipper() {
       endTimeSeconds,
       label,
       audioOnly: clipState.audioOnly,
+      organizeByDate: organizeByDateEnabled,
     }
     // Add format selector if available and not audio-only
     if (!clipState.audioOnly && clipState.selectedFormatValue) {
       request.formatSelector = clipState.selectedFormatValue
     }
     enqueueDownload(request)
-  }, [enqueueDownload, sfxEnabled])
+  }, [enqueueDownload, sfxEnabled, organizeByDateEnabled])
 
   const handleSetStartTime = useCallback(() => {
     const videoElement = getActiveVideoElement()
@@ -1132,13 +1151,14 @@ export default function Clipper() {
       endTimeSeconds: resolvedRange.endTimeSeconds,
       label: CUSTOM_CLIP_LABEL,
       audioOnly: clipState.audioOnly,
+      organizeByDate: organizeByDateEnabled,
     }
     // Add format selector if available and not audio-only
     if (!clipState.audioOnly && clipState.selectedFormatValue) {
       request.formatSelector = clipState.selectedFormatValue
     }
     enqueueDownload(request)
-  }, [enqueueDownload])
+  }, [enqueueDownload, organizeByDateEnabled])
 
   useEffect(() => {
     window.clip_getAudioOnly = () => clipState.audioOnly

@@ -7,7 +7,7 @@ import {
     type DownloadHistoryPage,
     type DownloadHistoryStatus,
 } from '@/lib/repos/download-history-repo';
-import { getPlaySfxEnabled, setPlaySfxEnabled, getShowLiveProcessLog, setShowLiveProcessLog, watchPlaySfxEnabled, watchShowLiveProcessLog } from '@/lib/repos/settings-repo';
+import { getPlaySfxEnabled, setPlaySfxEnabled, getShowLiveProcessLog, setShowLiveProcessLog, watchPlaySfxEnabled, watchShowLiveProcessLog, getOrganizeByDate, setOrganizeByDate, getOrganizeBySource, setOrganizeBySource, watchOrganizeByDate, watchOrganizeBySource } from '@/lib/repos/settings-repo';
 import { createProxyService } from '@webext-core/proxy-service';
 import { Box, Button, CheckboxCard, CheckboxGroup, Field, Grid, Heading, HStack, Input, Text, VStack } from '@chakra-ui/react';
 import type { ChangeEvent } from 'react';
@@ -27,10 +27,13 @@ export default function App() {
     const [busyEntryId, setBusyEntryId] = useState<string | null>(null);
     const [playSfxEnabled, setPlaySfxEnabledState] = useState(true);
     const [showLiveProcessLogEnabled, setShowLiveProcessLogState] = useState(false);
+    const [organizeByDate, setOrganizeByDateState] = useState(false);
+    const [organizeBySource, setOrganizeBySourceState] = useState(false);
+    const [selectedOrganize, setSelectedOrganize] = useState<string[]>([]);
 
     const checkboxItems = [
-        { value: 'date', title: 'Date', description: '(YYYY-MM-DD)' },
-        { value: 'source', title: 'Source', description: '(YouTube/Twitch)' },
+        { value: 'date', title: 'Date', description: 'Organize clips by date (Year -> Month)' },
+        { value: 'source', title: 'Source', description: 'Organize clips by website (YouTube/Twitch)' },
     ];
 
     const filterOptions = useMemo(() => ([
@@ -73,6 +76,14 @@ export default function App() {
             setPlaySfxEnabledState(playSfx);
             const showLog = await getShowLiveProcessLog();
             setShowLiveProcessLogState(showLog);
+            const orgDate = await getOrganizeByDate();
+            setOrganizeByDateState(orgDate);
+            const orgSource = await getOrganizeBySource();
+            setOrganizeBySourceState(orgSource);
+            setSelectedOrganize([
+                orgDate ? 'date' : null,
+                orgSource ? 'source' : null,
+            ].filter((v): v is string => v !== null));
         };
         void loadSettings();
 
@@ -82,6 +93,14 @@ export default function App() {
         });
         watchShowLiveProcessLog((value) => {
             setShowLiveProcessLogState(value);
+        });
+        watchOrganizeByDate((value) => {
+            setOrganizeByDateState(value);
+            setSelectedOrganize(prev => value ? [...prev, 'date'] : prev.filter(v => v !== 'date'));
+        });
+        watchOrganizeBySource((value) => {
+            setOrganizeBySourceState(value);
+            setSelectedOrganize(prev => value ? [...prev, 'source'] : prev.filter(v => v !== 'source'));
         });
     }, []);
 
@@ -146,6 +165,18 @@ export default function App() {
         await setShowLiveProcessLog(enabled);
     }, []);
 
+    const handleOrganizeChange = useCallback(async (values: string[]) => {
+        setSelectedOrganize(values);
+        const newDate = values.includes('date');
+        const newSource = values.includes('source');
+        setOrganizeByDateState(newDate);
+        setOrganizeBySourceState(newSource);
+        await Promise.all([
+            setOrganizeByDate(newDate),
+            setOrganizeBySource(newSource),
+        ]);
+    }, []);
+
     const totalPages = historyPage ? Math.max(1, Math.ceil(historyPage.total / HISTORY_PAGE_SIZE)) : 1;
 
     return (
@@ -187,20 +218,23 @@ export default function App() {
                     </VStack>
                 </Box>
 
+                {/*TODO: Add the option to organize downloads into subfolders by date or website or both. This will require changes to the backend to support dynamic subfolder paths based on the download date and source website. If 'Organize files by date' is selected*/}
                 <Box className="setting-group">
                     <Box flex={1}>
-                        <CheckboxGroup defaultValue={['date']}>
+                        <CheckboxGroup value={selectedOrganize} onValueChange={handleOrganizeChange}>
                             <Text fontSize="md" fontWeight="medium">
                                 Organize files by:
                             </Text>
                             <Grid gap="2" display="flex" flexDirection="row">
                                 {checkboxItems.map((item) => (
-                                    <CheckboxCard.Root key={item.value} value={item.value} bg="whiteAlpha.100" defaultChecked={item.value === 'date'} width="50%">
+                                    <CheckboxCard.Root key={item.value} value={item.value} bg="whiteAlpha.100" width="50%">
                                         <CheckboxCard.HiddenInput />
                                         <CheckboxCard.Control>
                                             <CheckboxCard.Content>
                                                 <CheckboxCard.Label>{item.title}</CheckboxCard.Label>
-                                                <CheckboxCard.Description>{item.description}</CheckboxCard.Description>
+                                                <CheckboxCard.Description>
+                                                    {item.description}
+                                                </CheckboxCard.Description>
                                             </CheckboxCard.Content>
                                             <CheckboxCard.Indicator />
                                         </CheckboxCard.Control>
