@@ -16,7 +16,7 @@ const clipDownloader = createProxyService(CLIP_DOWNLOADER_KEY);
 const historyRepo = createProxyService(DOWNLOAD_HISTORY_KEY);
 const HISTORY_PAGE_SIZE = DOWNLOAD_HISTORY_PAGE_SIZE;
 
-export default function TestApp() {
+export default function App() {
     const [historyPage, setHistoryPage] = useState<DownloadHistoryPage | null>(null);
     const [historyLoading, setHistoryLoading] = useState(true);
     const [historyError, setHistoryError] = useState<string | null>(null);
@@ -134,6 +134,25 @@ export default function TestApp() {
                         </Field.Root>
                         <Text className="help-text">Leave blank to use the default downloads directory.</Text>
                     </VStack>
+                    <VStack width="full">
+                        <Field.Root required>
+                            <Field.Label fontSize="md" fontWeight="medium">
+                                File Naming Template:
+                            </Field.Label>
+                            <HStack gap="2" width="100%">
+                                <Input
+                                    type="text"
+                                    id="download-directory"
+                                    placeholder="%(title) [%(id)s] {start_ms}-{end_ms}"
+                                    variant="subtle"
+                                    size="md"
+                                    border="1px whiteAlpha.100 solid"
+                                    borderRadius="md"
+                                    bg="whiteAlpha.100" />
+                            </HStack>
+                        </Field.Root>
+                        <Text className="help-text">Leave blank to use the default file naming template.</Text>
+                    </VStack>
                 </Box>
 
                 <Box className="setting-group">
@@ -163,35 +182,35 @@ export default function TestApp() {
                 <Box className="setting-group">
                     <Heading>Hotkey Settings</Heading>
                     <Text className="help-text">Click on an input field and press the desired key combination. Press Esc to cancel.</Text>
-                    <Box alignItems="center" justifyContent="center" display="flex" flexDirection="column" gap="2">
-                        <HStack>
-                            <VStack>
+                    <Box alignItems="center" justifyContent="center" display="flex" flexDirection="column" gap="2" w={'100%'}>
+                        <HStack w={"full"}>
+                            <VStack w={"full"}>
                                 <Text fontSize="md" fontWeight="medium">15s Clip (Default: Ctrl+Shift+1):</Text>
-                                <HStack>
-                                    <Input type="text" id="hotkey-15s" className="hotkey-input" placeholder="Press keys..." readOnly size="xs" bg="whiteAlpha.100" />
+                                <HStack w={'100%'}>
+                                    <Input type="text" id="hotkey-15s" className="hotkey-input" placeholder="Press keys..." readOnly size="xs" bg="whiteAlpha.100" flex={1} w={'100%'} />
                                     <Button data-for="hotkey-15s" size="lg" bg="whiteAlpha.100" _hover={{ backgroundColor: 'whiteAlpha.200' }}>Reset</Button>
                                 </HStack>
                             </VStack>
-                            <VStack>
+                            <VStack w={"full"}>
                                 <Text fontSize="md" fontWeight="medium">30s Clip (Default: Ctrl+Shift+2):</Text>
-                                <HStack>
-                                    <Input type="text" id="hotkey-30s" className="hotkey-input" placeholder="Press keys..." readOnly size="xs" bg="whiteAlpha.100" />
+                                <HStack w={'100%'}>
+                                    <Input type="text" id="hotkey-30s" className="hotkey-input" placeholder="Press keys..." readOnly size="xs" bg="whiteAlpha.100" flex={1} />
                                     <Button data-for="hotkey-30s" size="lg" bg="whiteAlpha.100" _hover={{ backgroundColor: 'whiteAlpha.200' }}>Reset</Button>
                                 </HStack>
                             </VStack>
                         </HStack>
-                        <HStack>
-                            <VStack>
+                        <HStack w={"full"}>
+                            <VStack w={"full"}>
                                 <Text fontSize="md" fontWeight="medium">60s Clip (Default: Ctrl+Shift+3):</Text>
-                                <HStack>
-                                    <Input type="text" id="hotkey-60s" className="hotkey-input" placeholder="Press keys..." readOnly size="xs" bg="whiteAlpha.100" />
+                                <HStack w={'100%'}>
+                                    <Input type="text" id="hotkey-60s" className="hotkey-input" placeholder="Press keys..." readOnly size="xs" bg="whiteAlpha.100" flex={1} />
                                     <Button data-for="hotkey-60s" size="lg" bg="whiteAlpha.100" _hover={{ backgroundColor: 'whiteAlpha.200' }}>Reset</Button>
                                 </HStack>
                             </VStack>
-                            <VStack>
+                            <VStack w={"full"}>
                                 <Text fontSize="md" fontWeight="medium">Full Video (Default: Ctrl+Shift+4):</Text>
-                                <HStack>
-                                    <Input type="text" id="hotkey-60s" className="hotkey-input" placeholder="Press keys..." readOnly size="xs" bg="whiteAlpha.100" />
+                                <HStack w={'100%'}>
+                                    <Input type="text" id="hotkey-60s" className="hotkey-input" placeholder="Press keys..." readOnly size="xs" bg="whiteAlpha.100" flex={1} />
                                     <Button data-for="hotkey-60s" size="lg" bg="whiteAlpha.100" _hover={{ backgroundColor: 'whiteAlpha.200' }}>Reset</Button>
                                 </HStack>
                             </VStack>
@@ -245,6 +264,34 @@ export default function TestApp() {
                         </Box>
                     </HStack>
 
+
+                    <Box className="setting-group">
+                        <Heading>Other Settings</Heading>
+                        <HStack height={"8rem"}>
+                            <CheckboxCard.Root value={"playSfx"} bg="whiteAlpha.100" defaultChecked height={"100%"}>
+                                <CheckboxCard.HiddenInput />
+                                <CheckboxCard.Control>
+                                    <CheckboxCard.Content>
+                                        <CheckboxCard.Label>Play sound effects</CheckboxCard.Label>
+                                        <CheckboxCard.Description>Adds sound effects that are played on clip creation, successful downloads, errors, etc.</CheckboxCard.Description>
+                                    </CheckboxCard.Content>
+                                    <CheckboxCard.Indicator />
+                                </CheckboxCard.Control>
+                            </CheckboxCard.Root>
+                            <CheckboxCard.Root value={"playSfx"} bg="whiteAlpha.100" defaultChecked height={"100%"}>
+                                <CheckboxCard.HiddenInput />
+                                <CheckboxCard.Control>
+                                    <CheckboxCard.Content>
+                                        <CheckboxCard.Label>Show live process log</CheckboxCard.Label>
+                                        <CheckboxCard.Description>When a clip is downloading the live log window will open automatically allowing you to see the download progress.</CheckboxCard.Description>
+                                    </CheckboxCard.Content>
+                                    <CheckboxCard.Indicator />
+                                </CheckboxCard.Control>
+                            </CheckboxCard.Root>
+                        </HStack>
+                    </Box>
+
+
                     <DownloadHistoryList
                         entries={historyPage?.entries ?? []}
                         loading={historyLoading}
@@ -263,8 +310,11 @@ export default function TestApp() {
                     />
                 </Box>
 
+
+
+
                 <Box className="settings-footer">
-                    <Text>Version 1.0</Text>
+                    <Text>Version 0.3</Text>
                 </Box>
             </Box>
         </Provider>
