@@ -4,6 +4,7 @@ import { createProxyService } from '@webext-core/proxy-service'
 import { toaster } from '@/components/ui/toaster'
 import { CLIP_DOWNLOADER_KEY } from '@/lib/services/proxy-service-keys'
 import { playSfx } from '@/lib/services/sfx'
+import { getPlaySfxEnabled, watchPlaySfxEnabled } from '@/lib/repos/settings-repo'
 import type { ClipDownloadRequest, ClipDownloadResult, ClipRangeDownloadRequest, FullVideoDownloadRequest } from '@/lib/repos/native-clip-downloader-repo'
 import './style.css'
 
@@ -638,6 +639,7 @@ export default function Clipper() {
   const [downloadQueue, setDownloadQueue] = useState<QueueJob[]>([])
   const [activeJobId, setActiveJobId] = useState<string | null>(null)
   const [timeSelection, setTimeSelection] = useState<ClipTimeSelection>(() => getClipTimeSelection())
+  const [sfxEnabled, setSfxEnabled] = useState(true)
 
   // Derived state for button disabling
   const isQueueFull = downloadQueue.length >= MAX_QUEUE_SIZE
@@ -666,6 +668,24 @@ export default function Clipper() {
     document.documentElement.appendChild(bridgeScript)
     bridgeScript.remove()
     emitPageDebugLog({ stage: 'content-script-mounted' })
+  }, [])
+
+  // Load SFX setting from storage on mount
+  useEffect(() => {
+    const loadSfxSetting = async () => {
+      const enabled = await getPlaySfxEnabled()
+      setSfxEnabled(enabled)
+    }
+    void loadSfxSetting()
+
+    // Subscribe to setting changes
+    const unsubscribe = watchPlaySfxEnabled((value) => {
+      setSfxEnabled(value)
+    })
+
+    return () => {
+      if (unsubscribe) unsubscribe()
+    }
   }, [])
 
   useEffect(() => {
@@ -751,13 +771,13 @@ export default function Clipper() {
     event.stopPropagation()
 
     if (window.clip_isExtensionContextValid && !window.clip_isExtensionContextValid()) {
-      playSfx('error')
+      if (sfxEnabled) playSfx('error')
       if (window.clip_handleInvalidContext) window.clip_handleInvalidContext()
       return
     }
 
     setIsOpen((previous) => !previous)
-  }, [])
+  }, [sfxEnabled])
 
   const handleFormatSelectionChange = useCallback((newValue: string) => {
     setSelectedFormatValue(newValue)
@@ -786,7 +806,7 @@ export default function Clipper() {
           duration: 5000,
           closable: true,
         })
-        playSfx('error')
+        if (sfxEnabled) playSfx('error')
       }
     } catch {
       toaster.error({
@@ -796,9 +816,9 @@ export default function Clipper() {
         duration: 5000,
         closable: true,
       })
-      playSfx('error')
+      if (sfxEnabled) playSfx('error')
     }
-  }, [])
+  }, [sfxEnabled])
 
   const enqueueDownload = useCallback((request: ClipDownloadRequest) => {
     if (isQueueFull) {
@@ -809,7 +829,7 @@ export default function Clipper() {
         duration: 4000,
         closable: true,
       })
-      playSfx('error')
+      if (sfxEnabled) playSfx('error')
       return
     }
 
@@ -835,7 +855,7 @@ export default function Clipper() {
       duration: 3000,
       closable: true,
     })
-    playSfx('start_recording')
+    if (sfxEnabled) playSfx('start_recording')
 
     emitPageDebugLog({
       stage: 'download-queued',
@@ -849,7 +869,7 @@ export default function Clipper() {
         }
         : request,
     })
-  }, [downloadQueue, isQueueFull])
+  }, [downloadQueue, isQueueFull, sfxEnabled])
 
   const handleRetry = useCallback((request: ClipDownloadRequest) => {
     enqueueDownload(request)
@@ -922,7 +942,7 @@ export default function Clipper() {
             },
           },
         })
-        playSfx('success')
+        if (sfxEnabled) playSfx('success')
       } else if (result) {
         if (result.code === 'insufficient-disk-space' || result.code === 'low-disk-space') {
           toaster.update(pendingJob.toastId, {
@@ -938,7 +958,7 @@ export default function Clipper() {
               },
             },
           })
-          playSfx('error')
+          if (sfxEnabled) playSfx('error')
         } else {
           toaster.update(pendingJob.toastId, {
             type: 'error',
@@ -953,7 +973,7 @@ export default function Clipper() {
               },
             },
           })
-          playSfx('error')
+          if (sfxEnabled) playSfx('error')
         }
       }
 
@@ -969,15 +989,24 @@ export default function Clipper() {
 
   const handleDurationDownload = useCallback((seconds: number, label: string) => {
     if (seconds === -1) {
+      const videoElement = getActiveVideoElement()
+      if (!videoElement) {
+        toaster.create({
+          type: 'error',
+          title: 'Video not found',
+          description: 'clip-dl could not find the active YouTube video element on this page.',
+          duration: 5000,
+          closable: true,
+        })
+        if (sfxEnabled) playSfx('error')
+        return
+      }
+
       const request: FullVideoDownloadRequest = {
         type: 'download-full-video',
         url: window.location.href,
-        label,
+        label: 'Full Video',
         audioOnly: clipState.audioOnly,
-      }
-      // Add format selector if available and not audio-only
-      if (!clipState.audioOnly && clipState.selectedFormatValue) {
-        request.formatSelector = clipState.selectedFormatValue
       }
       enqueueDownload(request)
       return
@@ -992,7 +1021,7 @@ export default function Clipper() {
         duration: 5000,
         closable: true,
       })
-      playSfx('error')
+      if (sfxEnabled) playSfx('error')
       return
     }
 
@@ -1012,7 +1041,7 @@ export default function Clipper() {
       request.formatSelector = clipState.selectedFormatValue
     }
     enqueueDownload(request)
-  }, [enqueueDownload])
+  }, [enqueueDownload, sfxEnabled])
 
   const handleSetStartTime = useCallback(() => {
     const videoElement = getActiveVideoElement()
@@ -1024,15 +1053,15 @@ export default function Clipper() {
         duration: 5000,
         closable: true,
       })
-      playSfx('error')
+      if (sfxEnabled) playSfx('error')
       return
     }
 
     const nextSelection = applyStartTimeSelection(videoElement.currentTime)
     setTimeSelection(nextSelection)
     emitPageDebugLog({ stage: 'time-selection-updated', source: 'set-start-time', selection: nextSelection })
-    playSfx('start_recording')
-  }, [])
+    if (sfxEnabled) playSfx('start_recording')
+  }, [sfxEnabled])
 
   const handleSetEndTime = useCallback(() => {
     const videoElement = getActiveVideoElement()
@@ -1044,15 +1073,15 @@ export default function Clipper() {
         duration: 5000,
         closable: true,
       })
-      playSfx('error')
+      if (sfxEnabled) playSfx('error')
       return
     }
 
     const nextSelection = applyEndTimeSelection(videoElement.currentTime)
     setTimeSelection(nextSelection)
     emitPageDebugLog({ stage: 'time-selection-updated', source: 'set-end-time', selection: nextSelection })
-    playSfx('stop_recording')
-  }, [])
+    if (sfxEnabled) playSfx('stop_recording')
+  }, [sfxEnabled])
 
   const handleCancelTimeSelection = useCallback(() => {
     const nextSelection = clearClipTimeSelection()
@@ -1073,7 +1102,7 @@ export default function Clipper() {
         duration: 5000,
         closable: true,
       })
-      playSfx('error')
+      if (sfxEnabled) playSfx('error')
       return
     }
 
@@ -1151,10 +1180,10 @@ export default function Clipper() {
     window.clip_updateQualityOptionsError = (message: string) => setFormatError(message)
     window.clip_isExtensionContextValid = () => true
     window.clip_handleInvalidContext = () => {
-      playSfx('error')
+      if (sfxEnabled) playSfx('error')
     }
     window.clip_handleClipOptionClick = (_event: MouseEvent) => { }
-  }, [])
+  }, [sfxEnabled])
 
   return (
     <Popover.Root

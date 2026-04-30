@@ -7,6 +7,7 @@ import {
     type DownloadHistoryPage,
     type DownloadHistoryStatus,
 } from '@/lib/repos/download-history-repo';
+import { getPlaySfxEnabled, setPlaySfxEnabled, getShowLiveProcessLog, setShowLiveProcessLog, watchPlaySfxEnabled, watchShowLiveProcessLog } from '@/lib/repos/settings-repo';
 import { createProxyService } from '@webext-core/proxy-service';
 import { Box, Button, CheckboxCard, CheckboxGroup, Field, Grid, Heading, HStack, Input, Text, VStack } from '@chakra-ui/react';
 import type { ChangeEvent } from 'react';
@@ -24,6 +25,8 @@ export default function App() {
     const [historyStatusFilter, setHistoryStatusFilter] = useState<DownloadHistoryStatus | 'all'>('all');
     const [historyQuery, setHistoryQuery] = useState('');
     const [busyEntryId, setBusyEntryId] = useState<string | null>(null);
+    const [playSfxEnabled, setPlaySfxEnabledState] = useState(true);
+    const [showLiveProcessLogEnabled, setShowLiveProcessLogState] = useState(true);
 
     const checkboxItems = [
         { value: 'date', title: 'Date', description: '(YYYY-MM-DD)' },
@@ -62,6 +65,25 @@ export default function App() {
     useEffect(() => {
         void loadHistory();
     }, [loadHistory]);
+
+    // Load settings from storage on mount
+    useEffect(() => {
+        const loadSettings = async () => {
+            const playSfx = await getPlaySfxEnabled();
+            setPlaySfxEnabledState(playSfx);
+            const showLog = await getShowLiveProcessLog();
+            setShowLiveProcessLogState(showLog);
+        };
+        void loadSettings();
+
+        // Subscribe to setting changes
+        watchPlaySfxEnabled((value) => {
+            setPlaySfxEnabledState(value);
+        });
+        watchShowLiveProcessLog((value) => {
+            setShowLiveProcessLogState(value);
+        });
+    }, []);
 
     const handleStatusFilterChange = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
         setHistoryPageIndex(1);
@@ -113,6 +135,16 @@ export default function App() {
             setBusyEntryId(null);
         }
     }, [loadHistory]);
+
+    const handlePlaySfxChange = useCallback(async (enabled: boolean) => {
+        setPlaySfxEnabledState(enabled);
+        await setPlaySfxEnabled(enabled);
+    }, []);
+
+    const handleShowLiveProcessLogChange = useCallback(async (enabled: boolean) => {
+        setShowLiveProcessLogState(enabled);
+        await setShowLiveProcessLog(enabled);
+    }, []);
 
     const totalPages = historyPage ? Math.max(1, Math.ceil(historyPage.total / HISTORY_PAGE_SIZE)) : 1;
 
@@ -268,7 +300,7 @@ export default function App() {
                     <Box className="setting-group">
                         <Heading>Other Settings</Heading>
                         <HStack height={"8rem"}>
-                            <CheckboxCard.Root value={"playSfx"} bg="whiteAlpha.100" defaultChecked height={"100%"}>
+                            <CheckboxCard.Root value={"playSfx"} bg="whiteAlpha.100" checked={playSfxEnabled} onCheckedChange={(state) => void handlePlaySfxChange(typeof state.checked === 'boolean' ? state.checked : false)} height={"100%"}>
                                 <CheckboxCard.HiddenInput />
                                 <CheckboxCard.Control>
                                     <CheckboxCard.Content>
@@ -278,7 +310,7 @@ export default function App() {
                                     <CheckboxCard.Indicator />
                                 </CheckboxCard.Control>
                             </CheckboxCard.Root>
-                            <CheckboxCard.Root value={"playSfx"} bg="whiteAlpha.100" defaultChecked height={"100%"}>
+                            <CheckboxCard.Root value={"showLiveProcessLog"} bg="whiteAlpha.100" checked={showLiveProcessLogEnabled} onCheckedChange={(state) => void handleShowLiveProcessLogChange(typeof state.checked === 'boolean' ? state.checked : false)} height={"100%"}>
                                 <CheckboxCard.HiddenInput />
                                 <CheckboxCard.Control>
                                     <CheckboxCard.Content>
