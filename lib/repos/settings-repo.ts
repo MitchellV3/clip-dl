@@ -25,6 +25,10 @@ export const downloaderSetting = storage.defineItem('local:downloader', {
     fallback: 'native',
 });
 
+export const downloadFileFormatSetting = storage.defineItem('local:downloadFileFormat', {
+    fallback: 'mkv',
+});
+
 // Getter functions
 export async function getPlaySfxEnabled(): Promise<boolean> {
     return await playSfxEnabledSetting.getValue();
@@ -112,6 +116,21 @@ export async function setDownloadDirectory(path: string): Promise<void> {
 
 export function watchDownloadDirectory(callback: (value: string) => void) {
     return downloadDirectorySetting.watch((newValue) => {
+        callback(newValue);
+    });
+}
+
+// File format functions
+export async function getDownloadFileFormat(): Promise<string> {
+    return await downloadFileFormatSetting.getValue();
+}
+
+export async function setDownloadFileFormat(format: string): Promise<void> {
+    await downloadFileFormatSetting.setValue(format);
+}
+
+export function watchDownloadFileFormat(callback: (value: string) => void) {
+    return downloadFileFormatSetting.watch((newValue) => {
         callback(newValue);
     });
 }

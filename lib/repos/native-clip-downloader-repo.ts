@@ -1,5 +1,5 @@
 import { saveDownloadHistoryEntry } from './download-history-repo'
-import { getDownloadDirectory, getDownloader } from './settings-repo'
+import { getDownloadDirectory, getDownloader, getDownloadFileFormat } from './settings-repo'
 
 const NATIVE_HOST_NAME = 'com.clip_dl.clip_downloader'
 
@@ -11,6 +11,7 @@ export interface ClipRangeDownloadRequest {
     label: string
     audioOnly?: boolean
     formatSelector?: string
+    fileFormat?: string
     showLiveProcessLog?: boolean
     organizeByDate?: boolean
     organizeBySource?: boolean
@@ -24,6 +25,7 @@ export interface FullVideoDownloadRequest {
     label: string
     audioOnly?: boolean
     formatSelector?: string
+    fileFormat?: string
     showLiveProcessLog?: boolean
     organizeByDate?: boolean
     organizeBySource?: boolean
@@ -118,7 +120,8 @@ export function NativeClipDownloaderRepo() {
         try {
             const downloadsPath = await getDownloadDirectory();
             const downloader = await getDownloader();
-            const requestPayload = { ...payload, downloadsPath, downloader } as ClipDownloadRequest;
+            const fileFormat = await getDownloadFileFormat();
+            const requestPayload = { ...payload, downloadsPath, downloader, fileFormat } as ClipDownloadRequest;
             console.warn(`[clip-dl] downloadClip: downloadsPath="${downloadsPath}", downloader="${downloader}", type=${requestPayload.type}`);
             console.warn(`[clip-dl] Native message payload: ${JSON.stringify(requestPayload)}`);
             // The background script owns native messaging. Content scripts must proxy

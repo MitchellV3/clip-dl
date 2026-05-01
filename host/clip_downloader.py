@@ -264,6 +264,10 @@ def _validate_download_clip_request(message: dict[str, Any]) -> tuple[dict[str, 
     if isinstance(downloads_path, str) and downloads_path:
         validated_request['downloadsPath'] = downloads_path
 
+    file_format = message.get('fileFormat')
+    if isinstance(file_format, str) and file_format:
+        validated_request['fileFormat'] = file_format
+
     return validated_request, None
 
 
@@ -304,6 +308,10 @@ def _validate_download_full_video_request(message: dict[str, Any]) -> tuple[dict
     format_selector = message.get('formatSelector')
     if isinstance(format_selector, str) and format_selector:
         validated_request['formatSelector'] = format_selector
+
+    file_format = message.get('fileFormat')
+    if isinstance(file_format, str) and file_format:
+        validated_request['fileFormat'] = file_format
 
     return validated_request, None
 
@@ -454,12 +462,12 @@ def _build_temp_output_template(request: dict[str, Any]) -> str:
     # yt-dlp writes into a temporary clip first. We then remux that file with a
     # second ffmpeg pass so timestamp/keyframe oddities from the initial section
     # extraction do not leak into the final file the user keeps.
-    return f'%(title).180B [%(id)s] {label_token} {start_ms}-{end_ms}.clip-dl-temp.%(ext)s'
+    return f'(%(upload_date>%Y-%m-%d)s) %(title).180B {label_token} {start_ms}-{end_ms} [%(id)s].clip-dl-temp.%(ext)s'
 
 
 def _build_full_video_output_template(request: dict[str, Any]) -> str:
     label_token = _sanitize_file_token(request['label']).lower()
-    return f'%(title).180B [%(id)s] {label_token}.%(ext)s'
+    return f'(%(upload_date>%Y-%m-%d)s) %(title).180B {label_token} [%(id)s].%(ext)s'
 
 SOURCE_DOMAIN_MAP: dict[str, str] = {
     'youtube.com': 'YouTube',
@@ -540,8 +548,8 @@ def _build_download_command(request: dict[str, Any], downloads_path: Path) -> li
     if audio_only:
         command.extend(['-x', '--audio-format', 'mp3'])
     else:
-        # Eventually can add a user option to change the preset to mp4 here.
-        command.extend(['-t', 'mkv'])
+        file_format = request.get('fileFormat', 'mkv')
+        command.extend(['-t', file_format])
 
     # Add format selector if provided and not doing audio-only download
     format_selector = request.get('formatSelector')

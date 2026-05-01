@@ -7,7 +7,7 @@ import {
     type DownloadHistoryPage,
     type DownloadHistoryStatus,
 } from '@/lib/repos/download-history-repo';
-import { getPlaySfxEnabled, setPlaySfxEnabled, getShowLiveProcessLog, setShowLiveProcessLog, watchPlaySfxEnabled, watchShowLiveProcessLog, getOrganizeByDate, setOrganizeByDate, getOrganizeBySource, setOrganizeBySource, watchOrganizeByDate, watchOrganizeBySource, getDownloadDirectory, setDownloadDirectory, watchDownloadDirectory, getDownloader, setDownloader, watchDownloader } from '@/lib/repos/settings-repo';
+import { getPlaySfxEnabled, setPlaySfxEnabled, getShowLiveProcessLog, setShowLiveProcessLog, watchPlaySfxEnabled, watchShowLiveProcessLog, getOrganizeByDate, setOrganizeByDate, getOrganizeBySource, setOrganizeBySource, watchOrganizeByDate, watchOrganizeBySource, getDownloadDirectory, setDownloadDirectory, watchDownloadDirectory, getDownloader, setDownloader, watchDownloader, getDownloadFileFormat, setDownloadFileFormat, watchDownloadFileFormat } from '@/lib/repos/settings-repo';
 import { createProxyService } from '@webext-core/proxy-service';
 import { Box, Button, CheckboxCard, CheckboxGroup, Field, Grid, Heading, HStack, Input, Text, VStack } from '@chakra-ui/react';
 import type { ChangeEvent } from 'react';
@@ -32,6 +32,7 @@ export default function App() {
     const [selectedOrganize, setSelectedOrganize] = useState<string[]>([]);
     const [downloadDirectory, setDownloadDirectoryState] = useState('');
     const [selectedDownloader, setSelectedDownloaderState] = useState('native');
+    const [selectedFileFormat, setSelectedFileFormatState] = useState('mkv');
 
     const checkboxItems = [
         { value: 'date', title: 'Date', description: 'Organize clips by date (Year -> Month)' },
@@ -55,6 +56,10 @@ export default function App() {
         { value: 'ffmpeg', label: 'FFmpeg' },
     ]), []);
 
+    const fileFormatList = useMemo(() => ([
+        { value: 'mkv', label: 'MKV (Recommended)' },
+        { value: 'mp4', label: 'MP4' },
+    ]), []);
 
     const loadHistory = useCallback(async () => {
         setHistoryLoading(true);
@@ -97,6 +102,8 @@ export default function App() {
             setDownloadDirectoryState(dlDir);
             const downloader = await getDownloader();
             setSelectedDownloaderState(downloader);
+            const fileFormat = await getDownloadFileFormat();
+            setSelectedFileFormatState(fileFormat);
             setSelectedOrganize([
                 orgDate ? 'date' : null,
                 orgSource ? 'source' : null,
@@ -124,6 +131,9 @@ export default function App() {
         });
         watchDownloader((value) => {
             setSelectedDownloaderState(value);
+        });
+        watchDownloadFileFormat((value) => {
+            setSelectedFileFormatState(value);
         });
     }, []);
 
@@ -218,6 +228,11 @@ export default function App() {
         await setDownloader(downloader);
     }, []);
 
+    const handleFileFormatChange = useCallback(async (format: string) => {
+        setSelectedFileFormatState(format);
+        await setDownloadFileFormat(format);
+    }, []);
+
     const totalPages = historyPage ? Math.max(1, Math.ceil(historyPage.total / HISTORY_PAGE_SIZE)) : 1;
 
     return (
@@ -247,7 +262,7 @@ export default function App() {
                                 <Input
                                     type="text"
                                     id="download-directory"
-                                    placeholder="%(title) [%(id)s] {start_ms}-{end_ms}"
+                                    placeholder="(%(upload_date>%Y-%m-%d)s) %(title) {start_ms}-{end_ms} [%(id)s].%(ext)s"
                                     variant="subtle"
                                     size="md"
                                     border="1px whiteAlpha.100 solid"
@@ -369,22 +384,44 @@ export default function App() {
                         </CheckboxCard.Root>
                     </HStack>
                     <VStack >
-                        <Text fontSize="md" fontWeight="medium">
-                            Downloader:
-                        </Text>
-                        <select
-                            className="downloader-select"
-                            aria-label="Select yt-dlp downloader"
-                            value={selectedDownloader}
-                            onChange={(e) => void handleDownloaderChange(e.target.value)}
-                        >
-                            {downloaderList.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                    {option.label}
-                                </option>
-                            ))}
-                        </select>
-                        <Text className="help-text">Using anything other than 'Native' requires the selected downloader to be installed on your system and added to your PATH.</Text>
+                        <HStack justifyContent="space-between" alignItems="center" marginBottom="4" gap="3">
+                            <Box>
+                                <Text fontSize="md" fontWeight="medium">
+                                    Downloader:
+                                </Text>
+                                <select
+                                    className="downloader-select"
+                                    aria-label="Select yt-dlp downloader"
+                                    value={selectedDownloader}
+                                    onChange={(e) => void handleDownloaderChange(e.target.value)}
+                                >
+                                    {downloaderList.map((option) => (
+                                        <option key={option.value} value={option.value}>
+                                            {option.label}
+                                        </option>
+                                    ))}
+                                </select>
+                                <Text className="help-text">Using anything other than 'Native' requires the selected downloader to be installed on your system and added to your PATH.</Text>
+                            </Box>
+                            <Box>
+                                <Text fontSize="md" fontWeight="medium">
+                                    File format:
+                                </Text>
+                                <select
+                                    className="downloader-select"
+                                    aria-label="Select yt-dlp downloader"
+                                    value={selectedFileFormat}
+                                    onChange={(e) => void handleFileFormatChange(e.target.value)}
+                                >
+                                    {fileFormatList.map((option) => (
+                                        <option key={option.value} value={option.value}>
+                                            {option.label}
+                                        </option>
+                                    ))}
+                                </select>
+                                <Text className="help-text">Note that using mp4 limits the amount of metadata that can be saved.</Text>
+                            </Box>
+                        </HStack>
                     </VStack>
                 </Box>
 
