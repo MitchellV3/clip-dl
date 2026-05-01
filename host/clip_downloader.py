@@ -333,6 +333,13 @@ def _validate_get_video_formats_request(message: dict[str, Any]) -> tuple[dict[s
     }, None
 
 
+def _validate_pick_directory_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    if message.get('type') != 'pick-directory':
+        return None, _error_response('bad-request', "Expected request type 'pick-directory'.")
+
+    return {'type': 'pick-directory'}, None
+
+
 def _validate_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     request_type = message.get('type')
 
@@ -348,7 +355,10 @@ def _validate_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, d
     if request_type == 'get-video-formats':
         return _validate_get_video_formats_request(message)
 
-    return None, _error_response('bad-request', "Expected request type 'download-clip', 'download-full-video', 'show-downloaded-clip-in-folder', or 'get-video-formats'.")
+    if request_type == 'pick-directory':
+        return _validate_pick_directory_request(message)
+
+    return None, _error_response('bad-request', "Expected request type 'download-clip', 'download-full-video', 'show-downloaded-clip-in-folder', 'get-video-formats', or 'pick-directory'.")
 
 
 def _require_tool(tool_name: str) -> tuple[str | None, dict[str, Any] | None]:
@@ -948,6 +958,34 @@ def main() -> int:
             'ok': True,
             'formats': formats,
         })
+        return 0
+
+    if request['type'] == 'pick-directory':
+        logger.info('Picking directory via native file dialog')
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+
+            root = tk.Tk()
+            root.withdraw()
+            directory_path = filedialog.askdirectory(parent=root, title='Select Download Directory')
+            root.destroy()
+
+            if directory_path:
+                logger.info(f'Selected directory: {directory_path}')
+                _write_native_message({
+                    'ok': True,
+                    'directory': directory_path,
+                })
+            else:
+                logger.info('Directory selection cancelled')
+                _write_native_message({
+                    'ok': True,
+                    'directory': None,
+                })
+        except Exception as error:
+            logger.error(f'Failed to pick directory: {error}')
+            _write_native_message(_error_response('pick-directory-failed', f'Failed to show directory picker: {error}'))
         return 0
 
     user_downloads_path = request.get('downloadsPath', '')

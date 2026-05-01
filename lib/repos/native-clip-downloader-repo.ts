@@ -181,10 +181,27 @@ export function NativeClipDownloaderRepo() {
         }
     }
 
+    const pickDirectory = async (): Promise<string | null> => {
+        try {
+            const response = await browser.runtime.sendNativeMessage(NATIVE_HOST_NAME, {
+                type: 'pick-directory',
+            }) as { ok: boolean; directory: string | null };
+
+            if (response.ok && response.directory) {
+                return response.directory;
+            }
+            return null;
+        } catch (error) {
+            console.warn('[clip-dl] Failed to pick directory:', error);
+            return null;
+        }
+    }
+
     return {
         downloadClip,
         showDownloadedClipInFolder,
         getVideoFormats,
+        pickDirectory,
     }
 
 

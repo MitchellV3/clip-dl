@@ -188,6 +188,14 @@ export default function App() {
         void setDownloadDirectory(e.target.value);
     }, []);
 
+    const handleBrowse = useCallback(async () => {
+        const path = await clipDownloader.pickDirectory();
+        if (path) {
+            setDownloadDirectoryState(path);
+            await setDownloadDirectory(path);
+        }
+    }, []);
+
     const totalPages = historyPage ? Math.max(1, Math.ceil(historyPage.total / HISTORY_PAGE_SIZE)) : 1;
 
     return (
@@ -203,7 +211,7 @@ export default function App() {
                             </Field.Label>
                             <HStack gap="2" width="100%">
                                 <Input type="text" id="download-directory" placeholder="Default Directory" variant="subtle" size="md" border="1px whiteAlpha.100 solid" borderRadius="md" bg="whiteAlpha.100" value={downloadDirectory} onChange={handleDownloadDirectoryChange} />
-                                <Button id="browse" border="1px whiteAlpha.100 solid" borderRadius="md" size="lg" bg="whiteAlpha.100" _hover={{ backgroundColor: 'whiteAlpha.200' }}>Browse</Button>
+                                <Button id="browse" onClick={handleBrowse} border="1px whiteAlpha.100 solid" borderRadius="md" size="lg" bg="whiteAlpha.100" _hover={{ backgroundColor: 'whiteAlpha.200' }}>Browse</Button>
                             </HStack>
                         </Field.Root>
                         <Text className="help-text">Leave blank to use the default downloads directory.</Text>
