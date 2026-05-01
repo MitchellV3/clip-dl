@@ -84,18 +84,24 @@ def _error_response(code: str, message: str) -> dict[str, Any]:
         'message': message,
     }
 
-def _validate_download_request_fields(message: dict[str, Any], label_error_message: str) -> tuple[str | None, str | None, bool | None, dict[str, Any] | None]:
+def _validate_download_request_fields(message: dict[str, Any], label_error_message: str) -> tuple[str | None, str | None, bool | None, dict[str, Any] | None, str | None]:
     url = message.get('url')
     label = message.get('label')
     audio_only = message.get('audioOnly', False)
 
     if not isinstance(url, str) or not url:
-        return None, None, None, _error_response('bad-request', 'A non-empty video URL is required.')
+        return None, None, None, _error_response('bad-request', 'A non-empty video URL is required.'), None
 
     if not isinstance(label, str) or not label:
-        return None, None, None, _error_response('bad-request', label_error_message)
+        return None, None, None, _error_response('bad-request', label_error_message), None
 
-    return url, label, bool(audio_only), None
+    # Validate downloader setting
+    downloader = message.get('downloader', 'native')
+    valid_downloaders = {'native', 'aria2c', 'axel', 'curl', 'wget', 'httpie', 'ffmpeg'}
+    if downloader not in valid_downloaders:
+        return None, None, None, _error_response('bad-request', f'Invalid downloader: {downloader}. Must be one of: {", ".join(sorted(valid_downloaders))}'), None
+
+    return url, label, bool(audio_only), None, downloader
 
 
 def _get_video_formats(url: str) -> list[dict[str, str]]:
@@ -212,13 +218,14 @@ def _validate_download_clip_request(message: dict[str, Any]) -> tuple[dict[str, 
     if message.get('type') != 'download-clip':
         return None, _error_response('bad-request', "Expected request type 'download-clip'.")
 
-    url, label, audio_only, validation_error = _validate_download_request_fields(message, 'A non-empty clip label is required.')
+    url, label, audio_only, validation_error, downloader = _validate_download_request_fields(message, 'A non-empty clip label is required.')
     if validation_error:
         return None, validation_error
 
     assert url is not None
     assert label is not None
     assert audio_only is not None
+    assert downloader is not None
 
     start_time_seconds = message.get('startTimeSeconds')
     end_time_seconds = message.get('endTimeSeconds')
@@ -245,6 +252,7 @@ def _validate_download_clip_request(message: dict[str, Any]) -> tuple[dict[str, 
         'showLiveProcessLog': bool(message.get('showLiveProcessLog', True)),
         'organizeByDate': bool(message.get('organizeByDate', False)),
         'organizeBySource': bool(message.get('organizeBySource', False)),
+        'downloader': downloader,
     }
 
     # Preserve optional fields if provided
@@ -263,13 +271,14 @@ def _validate_download_full_video_request(message: dict[str, Any]) -> tuple[dict
     if message.get('type') != 'download-full-video':
         return None, _error_response('bad-request', "Expected request type 'download-full-video'.")
 
-    url, label, audio_only, validation_error = _validate_download_request_fields(message, 'A non-empty full-video label is required.')
+    url, label, audio_only, validation_error, downloader = _validate_download_request_fields(message, 'A non-empty full-video label is required.')
     if validation_error:
         return None, validation_error
 
     assert url is not None
     assert label is not None
     assert audio_only is not None
+    assert downloader is not None
 
     validated_request: dict[str, Any] = {
         'type': 'download-full-video',
@@ -279,6 +288,7 @@ def _validate_download_full_video_request(message: dict[str, Any]) -> tuple[dict
         'showLiveProcessLog': bool(message.get('showLiveProcessLog', True)),
         'organizeByDate': bool(message.get('organizeByDate', False)),
         'organizeBySource': bool(message.get('organizeBySource', False)),
+        'downloader': downloader,
     }
 
     # Preserve optional fields if provided
@@ -486,11 +496,19 @@ def _resolve_effective_path(downloads_path: Path, request: dict[str, Any]) -> Pa
 
 def _build_download_command(request: dict[str, Any], downloads_path: Path) -> list[str]:
     audio_only = request.get('audioOnly', False)
+    downloader = request.get('downloader', 'native')
 
     effective_path = _resolve_effective_path(downloads_path, request)
 
     command = [
         'yt-dlp',
+    ]
+
+    # Add downloader flag if not using native
+    if downloader != 'native':
+        command.extend(['--downloader', downloader])
+
+    command.extend([
         '--no-warnings',
         '--verbose',
         '--windows-filenames',  # Forces yt-dlp to be careful with Windows reserved names
@@ -502,7 +520,7 @@ def _build_download_command(request: dict[str, Any], downloads_path: Path) -> li
         '--print', 'after_move:%(filepath)s',
         '--embed-metadata',  # Embeds all available metadata (title, uploader, URL, description, upload date, etc.)
         '--embed-thumbnail',  # Downloads and embeds the video thumbnail as poster image
-    ]
+    ])
 
     if request['type'] == 'download-clip':
         # yt-dlp still owns the YouTube extraction/download phase. We keep the
