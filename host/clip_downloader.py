@@ -268,6 +268,10 @@ def _validate_download_clip_request(message: dict[str, Any]) -> tuple[dict[str, 
     if isinstance(file_format, str) and file_format:
         validated_request['fileFormat'] = file_format
 
+    file_naming_template = message.get('fileNamingTemplate')
+    if isinstance(file_naming_template, str) and file_naming_template:
+        validated_request['fileNamingTemplate'] = file_naming_template
+
     return validated_request, None
 
 
@@ -312,6 +316,10 @@ def _validate_download_full_video_request(message: dict[str, Any]) -> tuple[dict
     file_format = message.get('fileFormat')
     if isinstance(file_format, str) and file_format:
         validated_request['fileFormat'] = file_format
+
+    file_naming_template = message.get('fileNamingTemplate')
+    if isinstance(file_naming_template, str) and file_naming_template:
+        validated_request['fileNamingTemplate'] = file_naming_template
 
     return validated_request, None
 
@@ -459,6 +467,15 @@ def _build_temp_output_template(request: dict[str, Any]) -> str:
     end_ms = int(round(request['endTimeSeconds'] * 1000))
     label_token = _sanitize_file_token(request['label']).lower()
 
+    user_template = request.get('fileNamingTemplate')
+    if user_template:
+        if '%(ext)s' not in user_template:
+            user_template = user_template + '.%(ext)s'
+        # Insert .clip-dl-temp. before the extension so _derive_final_output_path
+        # can replace it with the actual extension after the remux pass.
+        user_template = user_template.replace('.%(ext)s', '.clip-dl-temp.%(ext)s')
+        return user_template
+
     # yt-dlp writes into a temporary clip first. We then remux that file with a
     # second ffmpeg pass so timestamp/keyframe oddities from the initial section
     # extraction do not leak into the final file the user keeps.
@@ -466,6 +483,12 @@ def _build_temp_output_template(request: dict[str, Any]) -> str:
 
 
 def _build_full_video_output_template(request: dict[str, Any]) -> str:
+    user_template = request.get('fileNamingTemplate')
+    if user_template:
+        if '%(ext)s' not in user_template:
+            user_template = user_template + '.%(ext)s'
+        return user_template
+
     label_token = _sanitize_file_token(request['label']).lower()
     return f'(%(upload_date>%Y-%m-%d)s) %(title).180B {label_token} [%(id)s].%(ext)s'
 
