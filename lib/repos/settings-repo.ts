@@ -21,6 +21,10 @@ export const downloadDirectorySetting = storage.defineItem('local:downloadDirect
     fallback: '',
 });
 
+export const downloaderSetting = storage.defineItem('local:downloader', {
+    fallback: 'native',
+});
+
 // Getter functions
 export async function getPlaySfxEnabled(): Promise<boolean> {
     return await playSfxEnabledSetting.getValue();
@@ -76,6 +80,21 @@ export function watchOrganizeByDate(callback: (value: boolean) => void) {
 
 export function watchOrganizeBySource(callback: (value: boolean) => void) {
     return organizeBySourceSetting.watch((newValue) => {
+        callback(newValue);
+    });
+}
+
+// Downloader functions
+export async function getDownloader(): Promise<string> {
+    return await downloaderSetting.getValue();
+}
+
+export async function setDownloader(downloader: string): Promise<void> {
+    await downloaderSetting.setValue(downloader);
+}
+
+export function watchDownloader(callback: (value: string) => void) {
+    return downloaderSetting.watch((newValue) => {
         callback(newValue);
     });
 }

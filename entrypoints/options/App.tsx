@@ -1,5 +1,5 @@
 import { Provider } from '@/components/ui/provider';
-import { DownloadHistoryList } from '@/components/ui/download-history-list';
+import { DownloadHistoryList } from '@/entrypoints/options/download-history-list';
 import { CLIP_DOWNLOADER_KEY, DOWNLOAD_HISTORY_KEY } from '@/lib/services/proxy-service-keys';
 import {
     DOWNLOAD_HISTORY_PAGE_SIZE,
@@ -7,7 +7,7 @@ import {
     type DownloadHistoryPage,
     type DownloadHistoryStatus,
 } from '@/lib/repos/download-history-repo';
-import { getPlaySfxEnabled, setPlaySfxEnabled, getShowLiveProcessLog, setShowLiveProcessLog, watchPlaySfxEnabled, watchShowLiveProcessLog, getOrganizeByDate, setOrganizeByDate, getOrganizeBySource, setOrganizeBySource, watchOrganizeByDate, watchOrganizeBySource, getDownloadDirectory, setDownloadDirectory, watchDownloadDirectory } from '@/lib/repos/settings-repo';
+import { getPlaySfxEnabled, setPlaySfxEnabled, getShowLiveProcessLog, setShowLiveProcessLog, watchPlaySfxEnabled, watchShowLiveProcessLog, getOrganizeByDate, setOrganizeByDate, getOrganizeBySource, setOrganizeBySource, watchOrganizeByDate, watchOrganizeBySource, getDownloadDirectory, setDownloadDirectory, watchDownloadDirectory, getDownloader, setDownloader, watchDownloader } from '@/lib/repos/settings-repo';
 import { createProxyService } from '@webext-core/proxy-service';
 import { Box, Button, CheckboxCard, CheckboxGroup, Field, Grid, Heading, HStack, Input, Text, VStack } from '@chakra-ui/react';
 import type { ChangeEvent } from 'react';
@@ -31,6 +31,7 @@ export default function App() {
     const [organizeBySource, setOrganizeBySourceState] = useState(false);
     const [selectedOrganize, setSelectedOrganize] = useState<string[]>([]);
     const [downloadDirectory, setDownloadDirectoryState] = useState('');
+    const [selectedDownloader, setSelectedDownloaderState] = useState('native');
 
     const checkboxItems = [
         { value: 'date', title: 'Date', description: 'Organize clips by date (Year -> Month)' },
@@ -43,6 +44,17 @@ export default function App() {
         { value: 'error', label: 'Errors' },
         { value: 'cancelled', label: 'Cancelled' },
     ]), []);
+
+    const downloaderList = useMemo(() => ([
+        { value: 'native', label: 'Native' },
+        { value: 'aria2c', label: 'Aria2' },
+        { value: 'axel', label: 'Axel' },
+        { value: 'curl', label: 'Curl' },
+        { value: 'wget', label: 'Wget' },
+        { value: 'httpie', label: 'HTTPie' },
+        { value: 'ffmpeg', label: 'FFmpeg' },
+    ]), []);
+
 
     const loadHistory = useCallback(async () => {
         setHistoryLoading(true);
@@ -83,6 +95,8 @@ export default function App() {
             setOrganizeBySourceState(orgSource);
             const dlDir = await getDownloadDirectory();
             setDownloadDirectoryState(dlDir);
+            const downloader = await getDownloader();
+            setSelectedDownloaderState(downloader);
             setSelectedOrganize([
                 orgDate ? 'date' : null,
                 orgSource ? 'source' : null,
@@ -107,6 +121,9 @@ export default function App() {
         });
         watchDownloadDirectory((value) => {
             setDownloadDirectoryState(value);
+        });
+        watchDownloader((value) => {
+            setSelectedDownloaderState(value);
         });
     }, []);
 
@@ -196,6 +213,11 @@ export default function App() {
         }
     }, []);
 
+    const handleDownloaderChange = useCallback(async (downloader: string) => {
+        setSelectedDownloaderState(downloader);
+        await setDownloader(downloader);
+    }, []);
+
     const totalPages = historyPage ? Math.max(1, Math.ceil(historyPage.total / HISTORY_PAGE_SIZE)) : 1;
 
     return (
@@ -237,7 +259,6 @@ export default function App() {
                     </VStack>
                 </Box>
 
-                {/*TODO: Add the option to organize downloads into subfolders by date or website or both. This will require changes to the backend to support dynamic subfolder paths based on the download date and source website. If 'Organize files by date' is selected*/}
                 <Box className="setting-group">
                     <Box flex={1}>
                         <CheckboxGroup value={selectedOrganize} onValueChange={handleOrganizeChange}>
@@ -263,7 +284,7 @@ export default function App() {
                         </CheckboxGroup>
                     </Box>
                 </Box>
-
+                {/*
                 <Box className="setting-group">
                     <Heading>Hotkey Settings</Heading>
                     <Text className="help-text">Click on an input field and press the desired key combination. Press Esc to cancel.</Text>
@@ -303,6 +324,8 @@ export default function App() {
                     </Box>
                 </Box>
 
+*/}
+                {/*
                 <Box className="setting-group">
                     <Heading>Clip Length Presets</Heading>
                     <Text className="help-text">Drag and drop presets to reorder. Click × to remove a preset.</Text>
@@ -318,10 +341,11 @@ export default function App() {
                     </Box>
                 </Box>
 
+                */}
 
 
                 <Box className="setting-group">
-                    <Heading>Other Settings</Heading>
+                    <Heading>Download Settings</Heading>
                     <HStack height={"8rem"}>
                         <CheckboxCard.Root value={"playSfx"} bg="whiteAlpha.100" checked={playSfxEnabled} onCheckedChange={(state) => void handlePlaySfxChange(typeof state.checked === 'boolean' ? state.checked : false)} height={"100%"}>
                             <CheckboxCard.HiddenInput />
@@ -344,6 +368,24 @@ export default function App() {
                             </CheckboxCard.Control>
                         </CheckboxCard.Root>
                     </HStack>
+                    <VStack >
+                        <Text fontSize="md" fontWeight="medium">
+                            Downloader:
+                        </Text>
+                        <select
+                            className="downloader-select"
+                            aria-label="Select yt-dlp downloader"
+                            value={selectedDownloader}
+                            onChange={(e) => void handleDownloaderChange(e.target.value)}
+                        >
+                            {downloaderList.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                    {option.label}
+                                </option>
+                            ))}
+                        </select>
+                        <Text className="help-text">Using anything other than 'Native' requires the selected downloader to be installed on your system and added to your PATH.</Text>
+                    </VStack>
                 </Box>
 
 

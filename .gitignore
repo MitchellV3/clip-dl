@@ -30,3 +30,9 @@ host/.generated/
 
 
 __pycache__/
+
+.roo
+.agents
+.qwen
+.vscode
+skills-lock.json
