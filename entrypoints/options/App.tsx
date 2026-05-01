@@ -7,7 +7,7 @@ import {
     type DownloadHistoryPage,
     type DownloadHistoryStatus,
 } from '@/lib/repos/download-history-repo';
-import { getPlaySfxEnabled, setPlaySfxEnabled, getShowLiveProcessLog, setShowLiveProcessLog, watchPlaySfxEnabled, watchShowLiveProcessLog, getOrganizeByDate, setOrganizeByDate, getOrganizeBySource, setOrganizeBySource, watchOrganizeByDate, watchOrganizeBySource, getDownloadDirectory, setDownloadDirectory, watchDownloadDirectory, getDownloader, setDownloader, watchDownloader, getDownloadFileFormat, setDownloadFileFormat, watchDownloadFileFormat } from '@/lib/repos/settings-repo';
+import { getPlaySfxEnabled, setPlaySfxEnabled, getShowLiveProcessLog, setShowLiveProcessLog, watchPlaySfxEnabled, watchShowLiveProcessLog, getOrganizeByDate, setOrganizeByDate, getOrganizeBySource, setOrganizeBySource, watchOrganizeByDate, watchOrganizeBySource, getDownloadDirectory, setDownloadDirectory, watchDownloadDirectory, getDownloader, setDownloader, watchDownloader, getDownloadFileFormat, setDownloadFileFormat, watchDownloadFileFormat, getFileNamingTemplate, setFileNamingTemplate, watchFileNamingTemplate } from '@/lib/repos/settings-repo';
 import { createProxyService } from '@webext-core/proxy-service';
 import { Box, Button, CheckboxCard, CheckboxGroup, Field, Grid, Heading, HStack, Input, Text, VStack } from '@chakra-ui/react';
 import type { ChangeEvent } from 'react';
@@ -33,6 +33,7 @@ export default function App() {
     const [downloadDirectory, setDownloadDirectoryState] = useState('');
     const [selectedDownloader, setSelectedDownloaderState] = useState('native');
     const [selectedFileFormat, setSelectedFileFormatState] = useState('mkv');
+    const [fileNamingTemplate, setFileNamingTemplateState] = useState('');
 
     const checkboxItems = [
         { value: 'date', title: 'Date', description: 'Organize clips by date (Year -> Month)' },
@@ -104,6 +105,8 @@ export default function App() {
             setSelectedDownloaderState(downloader);
             const fileFormat = await getDownloadFileFormat();
             setSelectedFileFormatState(fileFormat);
+            const namingTemplate = await getFileNamingTemplate();
+            setFileNamingTemplateState(namingTemplate);
             setSelectedOrganize([
                 orgDate ? 'date' : null,
                 orgSource ? 'source' : null,
@@ -134,6 +137,9 @@ export default function App() {
         });
         watchDownloadFileFormat((value) => {
             setSelectedFileFormatState(value);
+        });
+        watchFileNamingTemplate((value) => {
+            setFileNamingTemplateState(value);
         });
     }, []);
 
@@ -233,6 +239,11 @@ export default function App() {
         await setDownloadFileFormat(format);
     }, []);
 
+    const handleFileNamingTemplateChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+        setFileNamingTemplateState(e.target.value);
+        void setFileNamingTemplate(e.target.value);
+    }, []);
+
     const totalPages = historyPage ? Math.max(1, Math.ceil(historyPage.total / HISTORY_PAGE_SIZE)) : 1;
 
     return (
@@ -261,13 +272,15 @@ export default function App() {
                             <HStack gap="2" width="100%">
                                 <Input
                                     type="text"
-                                    id="download-directory"
-                                    placeholder="(%(upload_date>%Y-%m-%d)s) %(title) {start_ms}-{end_ms} [%(id)s].%(ext)s"
+                                    id="file-naming-template"
+                                    placeholder="(%(upload_date>%Y-%m-%d)s) %(title) {start_ms}-{end_ms} [%(id)s]"
                                     variant="subtle"
                                     size="md"
                                     border="1px whiteAlpha.100 solid"
                                     borderRadius="md"
-                                    bg="whiteAlpha.100" />
+                                    bg="whiteAlpha.100"
+                                    value={fileNamingTemplate}
+                                    onChange={handleFileNamingTemplateChange} />
                             </HStack>
                         </Field.Root>
                         <Text className="help-text">Leave blank to use the default file naming template.</Text>

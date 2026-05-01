@@ -29,6 +29,10 @@ export const downloadFileFormatSetting = storage.defineItem('local:downloadFileF
     fallback: 'mkv',
 });
 
+export const fileNamingTemplateSetting = storage.defineItem('local:fileNamingTemplate', {
+    fallback: '',
+});
+
 // Getter functions
 export async function getPlaySfxEnabled(): Promise<boolean> {
     return await playSfxEnabledSetting.getValue();
@@ -131,6 +135,21 @@ export async function setDownloadFileFormat(format: string): Promise<void> {
 
 export function watchDownloadFileFormat(callback: (value: string) => void) {
     return downloadFileFormatSetting.watch((newValue) => {
+        callback(newValue);
+    });
+}
+
+// File naming template functions
+export async function getFileNamingTemplate(): Promise<string> {
+    return await fileNamingTemplateSetting.getValue();
+}
+
+export async function setFileNamingTemplate(template: string): Promise<void> {
+    await fileNamingTemplateSetting.setValue(template);
+}
+
+export function watchFileNamingTemplate(callback: (value: string) => void) {
+    return fileNamingTemplateSetting.watch((newValue) => {
         callback(newValue);
     });
 }
