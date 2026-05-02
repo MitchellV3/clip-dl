@@ -34,6 +34,7 @@ export default function App() {
     const [selectedDownloader, setSelectedDownloaderState] = useState('native');
     const [selectedFileFormat, setSelectedFileFormatState] = useState('mkv');
     const [fileNamingTemplate, setFileNamingTemplateState] = useState('');
+    const [templateSelection, setTemplateSelectionState] = useState('');
 
     const checkboxItems = [
         { value: 'date', title: 'Date', description: 'Organize clips by date (Year -> Month)' },
@@ -60,6 +61,71 @@ export default function App() {
     const fileFormatList = useMemo(() => ([
         { value: 'mkv', label: 'MKV (Recommended)' },
         { value: 'mp4', label: 'MP4' },
+    ]), []);
+
+    const templateSelectionList = useMemo(() => ([
+        { value: 'id', label: 'id', group: 'Basic Info' },
+        { value: 'title', label: 'title', group: 'Basic Info' },
+        { value: 'fulltitle', label: 'fulltitle', group: 'Basic Info' },
+        { value: 'alt_title', label: 'alt_title', group: 'Basic Info' },
+        { value: 'display_id', label: 'display_id', group: 'Basic Info' },
+        { value: 'ext', label: 'ext', group: 'Basic Info' },
+        { value: 'description', label: 'description', group: 'Basic Info' },
+        { value: 'uploader', label: 'uploader', group: 'Basic Info' },
+        { value: 'uploader_id', label: 'uploader_id', group: 'Basic Info' },
+        { value: 'channel', label: 'channel', group: 'Basic Info' },
+        { value: 'extractor', label: 'extractor', group: 'Basic Info' },
+        { value: 'extractor_key', label: 'extractor_key', group: 'Basic Info' },
+        { value: 'timestamp', label: 'timestamp', group: 'Date/Time' },
+        { value: 'upload_date', label: 'upload_date', group: 'Date/Time' },
+        { value: 'release_date', label: 'release_date', group: 'Date/Time' },
+        { value: 'modified_date', label: 'modified_date', group: 'Date/Time' },
+        { value: 'release_year', label: 'release_year', group: 'Date/Time' },
+        { value: 'epoch', label: 'epoch', group: 'Date/Time' },
+        { value: 'duration', label: 'duration', group: 'Duration/Stats' },
+        { value: 'duration_string', label: 'duration_string', group: 'Duration/Stats' },
+        { value: 'view_count', label: 'view_count', group: 'Duration/Stats' },
+        { value: 'like_count', label: 'like_count', group: 'Duration/Stats' },
+        { value: 'comment_count', label: 'comment_count', group: 'Duration/Stats' },
+        { value: 'playlist_id', label: 'playlist_id', group: 'Playlist' },
+        { value: 'playlist_title', label: 'playlist_title', group: 'Playlist' },
+        { value: 'playlist_index', label: 'playlist_index', group: 'Playlist' },
+        { value: 'playlist_count', label: 'playlist_count', group: 'Playlist' },
+        { value: 'n_entries', label: 'n_entries', group: 'Playlist' },
+        { value: 'autonumber', label: 'autonumber', group: 'Playlist' },
+        { value: 'playlist_uploader', label: 'playlist_uploader', group: 'Playlist' },
+        { value: 'playlist_uploader_id', label: 'playlist_uploader_id', group: 'Playlist' },
+        { value: 'webpage_url', label: 'webpage_url', group: 'URLs' },
+        { value: 'webpage_url_domain', label: 'webpage_url_domain', group: 'URLs' },
+        { value: 'original_url', label: 'original_url', group: 'URLs' },
+        { value: 'section_title', label: 'section_title', group: 'Chapters/Sections' },
+        { value: 'section_number', label: 'section_number', group: 'Chapters/Sections' },
+        { value: 'section_start', label: 'section_start', group: 'Chapters/Sections' },
+        { value: 'section_end', label: 'section_end', group: 'Chapters/Sections' },
+        { value: 'chapter', label: 'chapter', group: 'Chapters/Sections' },
+        { value: 'chapter_number', label: 'chapter_number', group: 'Chapters/Sections' },
+        { value: 'series', label: 'series', group: 'Series/Episode' },
+        { value: 'season', label: 'season', group: 'Series/Episode' },
+        { value: 'episode', label: 'episode', group: 'Series/Episode' },
+        { value: 'season_number', label: 'season_number', group: 'Series/Episode' },
+        { value: 'episode_number', label: 'episode_number', group: 'Series/Episode' },
+        { value: 'track', label: 'track', group: 'Music/Track' },
+        { value: 'album', label: 'album', group: 'Music/Track' },
+        { value: 'artists', label: 'artists', group: 'Music/Track' },
+        { value: 'genre', label: 'genre', group: 'Music/Track' },
+        { value: 'disc_number', label: 'disc_number', group: 'Music/Track' },
+        { value: 'live_status', label: 'live_status', group: 'Live/Availability' },
+        { value: 'is_live', label: 'is_live', group: 'Live/Availability' },
+        { value: 'was_live', label: 'was_live', group: 'Live/Availability' },
+        { value: 'availability', label: 'availability', group: 'Live/Availability' },
+        { value: 'age_limit', label: 'age_limit', group: 'Live/Availability' },
+        { value: 'tags', label: 'tags', group: 'Other' },
+        { value: 'categories', label: 'categories', group: 'Other' },
+        { value: 'cast', label: 'cast', group: 'Other' },
+        { value: 'license', label: 'license', group: 'Other' },
+        { value: 'location', label: 'location', group: 'Other' },
+        { value: 'channel_follower_count', label: 'channel_follower_count', group: 'Other' },
+        { value: 'channel_is_verified', label: 'channel_is_verified', group: 'Other' },
     ]), []);
 
     const loadHistory = useCallback(async () => {
@@ -244,6 +310,13 @@ export default function App() {
         void setFileNamingTemplate(e.target.value);
     }, []);
 
+    const handleFileNamingTemplateSelectionChange = useCallback(async (field: string) => {
+        setTemplateSelectionState('');
+        const newTemplate = fileNamingTemplate + (fileNamingTemplate.trim() ? ' ' : '') + `%(${field})s`;
+        setFileNamingTemplateState(newTemplate);
+        void setFileNamingTemplate(newTemplate);
+    }, [fileNamingTemplate]);
+
     const totalPages = historyPage ? Math.max(1, Math.ceil(historyPage.total / HISTORY_PAGE_SIZE)) : 1;
 
     return (
@@ -281,7 +354,48 @@ export default function App() {
                                     bg="whiteAlpha.100"
                                     value={fileNamingTemplate}
                                     onChange={handleFileNamingTemplateChange} />
+                                <Box>
+                                    <select
+                                        name='template-selection'
+                                        className="template-select"
+                                        aria-label="Add field to template"
+                                        value={templateSelection}
+                                        onChange={(e) => void handleFileNamingTemplateSelectionChange(e.target.value)}
+                                    >
+                                        <option value="">Select field</option>
+                                        {(() => {
+                                            const groups = new Map<string, typeof templateSelectionList>();
+                                            for (const option of templateSelectionList) {
+                                                const existing = groups.get(option.group ?? '');
+                                                if (existing) {
+                                                    existing.push(option);
+                                                } else {
+                                                    groups.set(option.group ?? '', [option]);
+                                                }
+                                            }
+                                            const result: React.ReactNode[] = [];
+                                            let first = true;
+                                            for (const [groupName, options] of groups) {
+                                                if (!first) {
+                                                    result.push(null);
+                                                }
+                                                first = false;
+                                                result.push(
+                                                    <optgroup key={groupName} label={groupName}>
+                                                        {options.map((option) => (
+                                                            <option key={option.value} value={option.value}>
+                                                                {option.label}
+                                                            </option>
+                                                        ))}
+                                                    </optgroup>
+                                                );
+                                            }
+                                            return result;
+                                        })()}
+                                    </select>
+                                </Box>
                             </HStack>
+
                         </Field.Root>
                         <Text className="help-text">Leave blank to use the default file naming template.</Text>
                     </VStack>
@@ -397,13 +511,14 @@ export default function App() {
                         </CheckboxCard.Root>
                     </HStack>
                     <VStack >
-                        <HStack justifyContent="space-between" alignItems="center" marginBottom="4" gap="3">
-                            <Box>
+                        <HStack justifyContent="space-between" alignItems="start" marginBottom="4" gap="3">
+                            <Box flex={1}>
                                 <Text fontSize="md" fontWeight="medium">
                                     Downloader:
                                 </Text>
                                 <select
                                     className="downloader-select"
+                                    name='downloader-selection'
                                     aria-label="Select yt-dlp downloader"
                                     value={selectedDownloader}
                                     onChange={(e) => void handleDownloaderChange(e.target.value)}
@@ -416,12 +531,13 @@ export default function App() {
                                 </select>
                                 <Text className="help-text">Using anything other than 'Native' requires the selected downloader to be installed on your system and added to your PATH.</Text>
                             </Box>
-                            <Box>
+                            <Box flex={1}>
                                 <Text fontSize="md" fontWeight="medium">
                                     File format:
                                 </Text>
                                 <select
-                                    className="downloader-select"
+                                    className="format-select"
+                                    name='format-selection'
                                     aria-label="Select yt-dlp downloader"
                                     value={selectedFileFormat}
                                     onChange={(e) => void handleFileFormatChange(e.target.value)}
@@ -443,19 +559,24 @@ export default function App() {
                 <Box className="setting-group">
                     <Heading>Download History</Heading>
 
-                    <HStack justifyContent="space-between" alignItems="center" marginBottom="4" gap="3">
+                    <HStack justifyContent="space-between" alignItems="center" marginBottom="4" >
                         <Input
+                            name='history-query'
+                            id="history-query"
                             type="text"
                             placeholder="Filter by URL, file name, or error..."
+                            variant="subtle"
                             size="md"
+                            border="1px whiteAlpha.100 solid"
+                            borderRadius="md"
                             bg="whiteAlpha.100"
-                            border="none"
                             _hover={{ backgroundColor: 'whiteAlpha.200' }}
                             value={historyQuery}
                             onChange={handleQueryChange}
+                            flex={1}
                         />
 
-                        <Box minW="200px">
+                        <Box >
                             <select
                                 aria-label="Filter history by status"
                                 className="history-status-select"

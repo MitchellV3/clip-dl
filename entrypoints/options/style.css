@@ -37,7 +37,7 @@ body {
 
 .history-status-select {
     width: 100%;
-    padding: 0.65rem 0.75rem;
+    padding: 0.85rem 0.85rem;
     border-radius: 0.375rem;
     border: none;
     background: rgba(255, 255, 255, 0.1);
@@ -50,7 +50,7 @@ body {
 
 .downloader-select {
     width: 100%;
-    padding: 0.65rem 0.75rem;
+    padding: 0.85rem 0.85rem;
     border-radius: 0.375rem;
     border: none;
     background: rgba(255, 255, 255, 0.1);
@@ -59,4 +59,36 @@ body {
 
 .downloader-select option {
     color: #000;
+}
+
+.format-select {
+    width: 100%;
+    padding: 0.85rem 0.85rem;
+    border-radius: 0.375rem;
+    border: none;
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+.format-select option {
+    color: #000;
+}
+
+.template-select {
+    width: 100%;
+    padding: 0.85rem 0.85rem;
+    width: 15rem;
+    border-radius: 0.375rem;
+    border: none;
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+.template-select option {
+    color: #000;
+}
+
+optgroup {
+    font-style: italic;
+    color: #666;
 }
