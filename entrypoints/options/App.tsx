@@ -7,7 +7,7 @@ import {
     type DownloadHistoryPage,
     type DownloadHistoryStatus,
 } from '@/lib/repos/download-history-repo';
-import { getPlaySfxEnabled, setPlaySfxEnabled, getShowLiveProcessLog, setShowLiveProcessLog, watchPlaySfxEnabled, watchShowLiveProcessLog, getOrganizeByDate, setOrganizeByDate, getOrganizeBySource, setOrganizeBySource, watchOrganizeByDate, watchOrganizeBySource, getDownloadDirectory, setDownloadDirectory, watchDownloadDirectory, getDownloader, setDownloader, watchDownloader, getDownloadFileFormat, setDownloadFileFormat, watchDownloadFileFormat, getFileNamingTemplate, setFileNamingTemplate, watchFileNamingTemplate, getEnableScreenshotButton, setEnableScreenshotButton, watchEnableScreenshotButton } from '@/lib/repos/settings-repo';
+import { getPlaySfxEnabled, setPlaySfxEnabled, getShowLiveProcessLog, setShowLiveProcessLog, watchPlaySfxEnabled, watchShowLiveProcessLog, getOrganizeByDate, setOrganizeByDate, getOrganizeBySource, setOrganizeBySource, watchOrganizeByDate, watchOrganizeBySource, getOrganizeByUploader, setOrganizeByUploader, watchOrganizeByUploader, getDownloadDirectory, setDownloadDirectory, watchDownloadDirectory, getDownloader, setDownloader, watchDownloader, getDownloadFileFormat, setDownloadFileFormat, watchDownloadFileFormat, getFileNamingTemplate, setFileNamingTemplate, watchFileNamingTemplate, getEnableScreenshotButton, setEnableScreenshotButton, watchEnableScreenshotButton } from '@/lib/repos/settings-repo';
 import { createProxyService } from '@webext-core/proxy-service';
 import { Box, Button, CheckboxCard, CheckboxGroup, Field, Grid, Heading, HStack, Input, Text, VStack } from '@chakra-ui/react';
 import type { ChangeEvent } from 'react';
@@ -29,6 +29,7 @@ export default function App() {
     const [showLiveProcessLogEnabled, setShowLiveProcessLogState] = useState(false);
     const [organizeByDate, setOrganizeByDateState] = useState(false);
     const [organizeBySource, setOrganizeBySourceState] = useState(false);
+    const [organizeByUploader, setOrganizeByUploaderState] = useState(false);
     const [selectedOrganize, setSelectedOrganize] = useState<string[]>([]);
     const [downloadDirectory, setDownloadDirectoryState] = useState('');
     const [selectedDownloader, setSelectedDownloaderState] = useState('native');
@@ -167,6 +168,8 @@ export default function App() {
             setOrganizeByDateState(orgDate);
             const orgSource = await getOrganizeBySource();
             setOrganizeBySourceState(orgSource);
+            const orgUploader = await getOrganizeByUploader();
+            setOrganizeByUploaderState(orgUploader);
             const dlDir = await getDownloadDirectory();
             setDownloadDirectoryState(dlDir);
             const downloader = await getDownloader();
@@ -180,6 +183,7 @@ export default function App() {
             setSelectedOrganize([
                 orgDate ? 'date' : null,
                 orgSource ? 'source' : null,
+                orgUploader ? 'uploader' : null,
             ].filter((v): v is string => v !== null));
         };
         void loadSettings();
@@ -198,6 +202,10 @@ export default function App() {
         watchOrganizeBySource((value) => {
             setOrganizeBySourceState(value);
             setSelectedOrganize(prev => value ? [...prev, 'source'] : prev.filter(v => v !== 'source'));
+        });
+        watchOrganizeByUploader((value) => {
+            setOrganizeByUploaderState(value);
+            setSelectedOrganize(prev => value ? [...prev, 'uploader'] : prev.filter(v => v !== 'uploader'));
         });
         watchDownloadDirectory((value) => {
             setDownloadDirectoryState(value);
@@ -281,11 +289,14 @@ export default function App() {
         setSelectedOrganize(values);
         const newDate = values.includes('date');
         const newSource = values.includes('source');
+        const newUploader = values.includes('uploader');
         setOrganizeByDateState(newDate);
         setOrganizeBySourceState(newSource);
+        setOrganizeByUploaderState(newUploader);
         await Promise.all([
             setOrganizeByDate(newDate),
             setOrganizeBySource(newSource),
+            setOrganizeByUploader(newUploader),
         ]);
     }, []);
 

@@ -17,6 +17,10 @@ export const organizeBySourceSetting = storage.defineItem('local:organizeBySourc
     fallback: false,
 });
 
+export const organizeByUploaderSetting = storage.defineItem('local:organizeByUploader', {
+    fallback: false,
+});
+
 export const downloadDirectorySetting = storage.defineItem('local:downloadDirectory', {
     fallback: '',
 });
@@ -54,6 +58,10 @@ export async function getOrganizeBySource(): Promise<boolean> {
     return await organizeBySourceSetting.getValue();
 }
 
+export async function getOrganizeByUploader(): Promise<boolean> {
+    return await organizeByUploaderSetting.getValue();
+}
+
 // Setter functions
 export async function setPlaySfxEnabled(enabled: boolean): Promise<void> {
     await playSfxEnabledSetting.setValue(enabled);
@@ -69,6 +77,10 @@ export async function setOrganizeByDate(enabled: boolean): Promise<void> {
 
 export async function setOrganizeBySource(enabled: boolean): Promise<void> {
     await organizeBySourceSetting.setValue(enabled);
+}
+
+export async function setOrganizeByUploader(enabled: boolean): Promise<void> {
+    await organizeByUploaderSetting.setValue(enabled);
 }
 
 // Watch for changes to reactive updates
@@ -92,6 +104,12 @@ export function watchOrganizeByDate(callback: (value: boolean) => void) {
 
 export function watchOrganizeBySource(callback: (value: boolean) => void) {
     return organizeBySourceSetting.watch((newValue) => {
+        callback(newValue);
+    });
+}
+
+export function watchOrganizeByUploader(callback: (value: boolean) => void) {
+    return organizeByUploaderSetting.watch((newValue) => {
         callback(newValue);
     });
 }

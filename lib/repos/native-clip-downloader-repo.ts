@@ -16,6 +16,7 @@ export interface ClipRangeDownloadRequest {
     showLiveProcessLog?: boolean
     organizeByDate?: boolean
     organizeBySource?: boolean
+    organizeByUploader?: boolean
     downloadsPath?: string
     downloader?: string
 }
@@ -31,6 +32,7 @@ export interface FullVideoDownloadRequest {
     showLiveProcessLog?: boolean
     organizeByDate?: boolean
     organizeBySource?: boolean
+    organizeByUploader?: boolean
     downloadsPath?: string
     downloader?: string
 }

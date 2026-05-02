@@ -252,6 +252,7 @@ def _validate_download_clip_request(message: dict[str, Any]) -> tuple[dict[str, 
         'showLiveProcessLog': bool(message.get('showLiveProcessLog', True)),
         'organizeByDate': bool(message.get('organizeByDate', False)),
         'organizeBySource': bool(message.get('organizeBySource', False)),
+        'organizeByUploader': bool(message.get('organizeByUploader', False)),
         'downloader': downloader,
     }
 
@@ -296,6 +297,7 @@ def _validate_download_full_video_request(message: dict[str, Any]) -> tuple[dict
         'showLiveProcessLog': bool(message.get('showLiveProcessLog', True)),
         'organizeByDate': bool(message.get('organizeByDate', False)),
         'organizeBySource': bool(message.get('organizeBySource', False)),
+        'organizeByUploader': bool(message.get('organizeByUploader', False)),
         'downloader': downloader,
     }
 
@@ -501,6 +503,7 @@ SOURCE_DOMAIN_MAP: dict[str, str] = {
 def _resolve_effective_path(downloads_path: Path, request: dict[str, Any]) -> Path:
     organize_by_date = request.get('organizeByDate', False)
     organize_by_source = request.get('organizeBySource', False)
+    organize_by_uploader = request.get('organizeByUploader', False)
 
     effective_path = downloads_path
 
@@ -517,8 +520,32 @@ def _resolve_effective_path(downloads_path: Path, request: dict[str, Any]) -> Pa
         source_name = SOURCE_DOMAIN_MAP.get(domain) or domain
         effective_path = effective_path / source_name
         logger.info(f'Path organization: adding source subdir {source_name} (domain={domain})')
-    else:
-        logger.info(f'Path organization: organizeBySource={organize_by_source}')
+
+    if organize_by_uploader:
+        url = request.get('url', '')
+        try:
+            result = subprocess.run(
+                ['yt-dlp', '--dump-json', '--no-download', '--skip-download', url],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                encoding='utf-8',
+                errors='replace',
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                info = json.loads(result.stdout)
+                uploader = info.get('uploader', 'Unknown')
+                uploader = _sanitize_file_token(uploader)
+                effective_path = effective_path / uploader
+                logger.info(f'Path organization: adding uploader subdir {uploader}')
+            else:
+                logger.warning(f'Could not fetch uploader info for {url}')
+                effective_path = effective_path / 'Unknown'
+        except Exception as e:
+            logger.warning(f'Error fetching uploader info: {e}')
+            effective_path = effective_path / 'Unknown'
+
+    logger.info(f'Path organization: organizeByDate={organize_by_date}, organizeBySource={organize_by_source}, organizeByUploader={organize_by_uploader}')
 
     effective_path.mkdir(parents=True, exist_ok=True)
     logger.info(f'Effective download path: {effective_path}')

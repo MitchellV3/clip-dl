@@ -4,7 +4,7 @@ import { createProxyService } from '@webext-core/proxy-service'
 import { toaster } from '@/components/ui/toaster'
 import { CLIP_DOWNLOADER_KEY } from '@/lib/services/proxy-service-keys'
 import { playSfx } from '@/lib/services/sfx'
-import { getPlaySfxEnabled, watchPlaySfxEnabled, getShowLiveProcessLog, watchShowLiveProcessLog, getOrganizeByDate, watchOrganizeByDate, getOrganizeBySource, watchOrganizeBySource, getDownloadFileFormat, getFileNamingTemplate, watchFileNamingTemplate } from '@/lib/repos/settings-repo'
+import { getPlaySfxEnabled, watchPlaySfxEnabled, getShowLiveProcessLog, watchShowLiveProcessLog, getOrganizeByDate, watchOrganizeByDate, getOrganizeBySource, watchOrganizeBySource, getOrganizeByUploader, watchOrganizeByUploader, getDownloadFileFormat, getFileNamingTemplate, watchFileNamingTemplate } from '@/lib/repos/settings-repo'
 import type { ClipDownloadRequest, ClipDownloadResult, ClipRangeDownloadRequest, FullVideoDownloadRequest } from '@/lib/repos/native-clip-downloader-repo'
 import './style.css'
 
@@ -645,6 +645,7 @@ export default function Clipper() {
   const [showLiveProcessLogEnabled, setShowLiveProcessLogEnabled] = useState(true)
   const [organizeByDateEnabled, setOrganizeByDateEnabled] = useState(false)
   const [organizeBySourceEnabled, setOrganizeBySourceEnabled] = useState(false)
+  const [organizeByUploaderEnabled, setOrganizeByUploaderEnabled] = useState(false)
   const [fileFormat, setFileFormat] = useState('mkv')
   const [fileNamingTemplate, setFileNamingTemplate] = useState('')
 
@@ -739,6 +740,24 @@ export default function Clipper() {
     const unsubscribe = watchOrganizeBySource((value) => {
       console.log('[clip-dl] organizeBySource setting changed:', value)
       setOrganizeBySourceEnabled(value)
+    })
+
+    return () => {
+      if (unsubscribe) unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
+    const loadOrganizeByUploaderSetting = async () => {
+      const enabled = await getOrganizeByUploader()
+      console.log('[clip-dl] Loaded organizeByUploader setting:', enabled)
+      setOrganizeByUploaderEnabled(enabled)
+    }
+    void loadOrganizeByUploaderSetting()
+
+    const unsubscribe = watchOrganizeByUploader((value) => {
+      console.log('[clip-dl] organizeByUploader setting changed:', value)
+      setOrganizeByUploaderEnabled(value)
     })
 
     return () => {
@@ -897,7 +916,7 @@ export default function Clipper() {
   }, [sfxEnabled])
 
   const enqueueDownload = useCallback((request: ClipDownloadRequest) => {
-    console.log('[clip-dl] Enqueueing download:', { type: request.type, organizeByDate: request.organizeByDate, organizeBySource: request.organizeBySource })
+    console.log('[clip-dl] Enqueueing download:', { type: request.type, organizeByDate: request.organizeByDate, organizeBySource: request.organizeBySource, organizeByUploader: request.organizeByUploader })
     if (isQueueFull) {
       toaster.create({
         type: 'error',
@@ -995,7 +1014,7 @@ export default function Clipper() {
       try {
         const showLiveProcessLog = await getShowLiveProcessLog()
         const downloadPayload = { ...pendingJob.request, showLiveProcessLog }
-        console.log('[clip-dl] Calling downloadClip with:', { type: downloadPayload.type, organizeByDate: downloadPayload.organizeByDate, organizeBySource: downloadPayload.organizeBySource })
+        console.log('[clip-dl] Calling downloadClip with:', { type: downloadPayload.type, organizeByDate: downloadPayload.organizeByDate, organizeBySource: downloadPayload.organizeBySource, organizeByUploader: downloadPayload.organizeByUploader })
         result = await clipDownloader.downloadClip(downloadPayload)
       } catch (error) {
         result = {
@@ -1091,6 +1110,7 @@ export default function Clipper() {
         fileNamingTemplate,
         organizeByDate: organizeByDateEnabled,
         organizeBySource: organizeBySourceEnabled,
+        organizeByUploader: organizeByUploaderEnabled,
       }
       enqueueDownload(request)
       return
@@ -1123,14 +1143,15 @@ export default function Clipper() {
       fileNamingTemplate,
       organizeByDate: organizeByDateEnabled,
       organizeBySource: organizeBySourceEnabled,
+      organizeByUploader: organizeByUploaderEnabled,
     }
-    console.log('[clip-dl] Download request:', { organizeByDate: organizeByDateEnabled, organizeBySource: organizeBySourceEnabled })
+    console.log('[clip-dl] Download request:', { organizeByDate: organizeByDateEnabled, organizeBySource: organizeBySourceEnabled, organizeByUploader: organizeByUploaderEnabled })
     // Add format selector if available and not audio-only
     if (!clipState.audioOnly && clipState.selectedFormatValue) {
       request.formatSelector = clipState.selectedFormatValue
     }
     enqueueDownload(request)
-  }, [enqueueDownload, sfxEnabled, organizeByDateEnabled, organizeBySourceEnabled, fileFormat, fileNamingTemplate])
+  }, [enqueueDownload, sfxEnabled, organizeByDateEnabled, organizeBySourceEnabled, organizeByUploaderEnabled, fileFormat, fileNamingTemplate])
 
   const handleSetStartTime = useCallback(() => {
     const videoElement = getActiveVideoElement()
@@ -1206,13 +1227,14 @@ export default function Clipper() {
       fileNamingTemplate,
       organizeByDate: organizeByDateEnabled,
       organizeBySource: organizeBySourceEnabled,
+      organizeByUploader: organizeByUploaderEnabled,
     }
     // Add format selector if available and not audio-only
     if (!clipState.audioOnly && clipState.selectedFormatValue) {
       request.formatSelector = clipState.selectedFormatValue
     }
     enqueueDownload(request)
-  }, [enqueueDownload, organizeByDateEnabled, organizeBySourceEnabled, fileFormat, fileNamingTemplate])
+  }, [enqueueDownload, organizeByDateEnabled, organizeBySourceEnabled, organizeByUploaderEnabled, fileFormat, fileNamingTemplate])
 
   useEffect(() => {
     window.clip_getAudioOnly = () => clipState.audioOnly
