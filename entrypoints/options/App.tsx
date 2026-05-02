@@ -7,7 +7,7 @@ import {
     type DownloadHistoryPage,
     type DownloadHistoryStatus,
 } from '@/lib/repos/download-history-repo';
-import { getPlaySfxEnabled, setPlaySfxEnabled, getShowLiveProcessLog, setShowLiveProcessLog, watchPlaySfxEnabled, watchShowLiveProcessLog, getOrganizeByDate, setOrganizeByDate, getOrganizeBySource, setOrganizeBySource, watchOrganizeByDate, watchOrganizeBySource, getDownloadDirectory, setDownloadDirectory, watchDownloadDirectory, getDownloader, setDownloader, watchDownloader, getDownloadFileFormat, setDownloadFileFormat, watchDownloadFileFormat, getFileNamingTemplate, setFileNamingTemplate, watchFileNamingTemplate } from '@/lib/repos/settings-repo';
+import { getPlaySfxEnabled, setPlaySfxEnabled, getShowLiveProcessLog, setShowLiveProcessLog, watchPlaySfxEnabled, watchShowLiveProcessLog, getOrganizeByDate, setOrganizeByDate, getOrganizeBySource, setOrganizeBySource, watchOrganizeByDate, watchOrganizeBySource, getDownloadDirectory, setDownloadDirectory, watchDownloadDirectory, getDownloader, setDownloader, watchDownloader, getDownloadFileFormat, setDownloadFileFormat, watchDownloadFileFormat, getFileNamingTemplate, setFileNamingTemplate, watchFileNamingTemplate, getEnableScreenshotButton, setEnableScreenshotButton, watchEnableScreenshotButton } from '@/lib/repos/settings-repo';
 import { createProxyService } from '@webext-core/proxy-service';
 import { Box, Button, CheckboxCard, CheckboxGroup, Field, Grid, Heading, HStack, Input, Text, VStack } from '@chakra-ui/react';
 import type { ChangeEvent } from 'react';
@@ -35,10 +35,12 @@ export default function App() {
     const [selectedFileFormat, setSelectedFileFormatState] = useState('mkv');
     const [fileNamingTemplate, setFileNamingTemplateState] = useState('');
     const [templateSelection, setTemplateSelectionState] = useState('');
+    const [enableScreenshotButton, setEnableScreenshotButtonState] = useState(true);
 
     const checkboxItems = [
         { value: 'date', title: 'Date', description: 'Organize clips by date (Year -> Month)' },
         { value: 'source', title: 'Source', description: 'Organize clips by website (YouTube/Twitch)' },
+        { value: 'uploader', title: 'Uploader', description: 'Organize clips by uploader/channel name' },
     ];
 
     const filterOptions = useMemo(() => ([
@@ -173,6 +175,8 @@ export default function App() {
             setSelectedFileFormatState(fileFormat);
             const namingTemplate = await getFileNamingTemplate();
             setFileNamingTemplateState(namingTemplate);
+            const screenshotEnabled = await getEnableScreenshotButton();
+            setEnableScreenshotButtonState(screenshotEnabled);
             setSelectedOrganize([
                 orgDate ? 'date' : null,
                 orgSource ? 'source' : null,
@@ -206,6 +210,9 @@ export default function App() {
         });
         watchFileNamingTemplate((value) => {
             setFileNamingTemplateState(value);
+        });
+        watchEnableScreenshotButton((value) => {
+            setEnableScreenshotButtonState(value);
         });
     }, []);
 
@@ -316,6 +323,11 @@ export default function App() {
         setFileNamingTemplateState(newTemplate);
         void setFileNamingTemplate(newTemplate);
     }, [fileNamingTemplate]);
+
+    const handleScreenshotButtonChange = useCallback(async (enabled: boolean) => {
+        setEnableScreenshotButtonState(enabled);
+        await setEnableScreenshotButton(enabled);
+    }, []);
 
     const totalPages = historyPage ? Math.max(1, Math.ceil(historyPage.total / HISTORY_PAGE_SIZE)) : 1;
 
@@ -551,6 +563,19 @@ export default function App() {
                                 <Text className="help-text">Note that using mp4 limits the amount of metadata that can be saved.</Text>
                             </Box>
                         </HStack>
+                        <HStack justifyContent="space-between" alignItems="start" marginBottom="4" gap="3">
+                            <CheckboxCard.Root value={"enableScreenshotButton"} bg="whiteAlpha.100" checked={enableScreenshotButton} onCheckedChange={(state) => void handleScreenshotButtonChange(typeof state.checked === 'boolean' ? state.checked : false)} height={"100%"} flex={1}>
+                                <CheckboxCard.HiddenInput />
+                                <CheckboxCard.Control>
+                                    <CheckboxCard.Content>
+                                        <CheckboxCard.Label>Show screenshot button</CheckboxCard.Label>
+                                        <CheckboxCard.Description>Display a camera icon on Twitch/YouTube that saves a screenshot of that moment</CheckboxCard.Description>
+                                    </CheckboxCard.Content>
+                                    <CheckboxCard.Indicator />
+                                </CheckboxCard.Control>
+                            </CheckboxCard.Root>
+                        </HStack>
+
                     </VStack>
                 </Box>
 
@@ -616,7 +641,7 @@ export default function App() {
 
 
                 <Box className="settings-footer">
-                    <Text>Version 0.3</Text>
+                    <Text>Version 0.5</Text>
                 </Box>
             </Box>
         </Provider>

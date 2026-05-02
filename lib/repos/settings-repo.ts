@@ -33,6 +33,10 @@ export const fileNamingTemplateSetting = storage.defineItem('local:fileNamingTem
     fallback: '',
 });
 
+export const enableScreenshotButtonSetting = storage.defineItem('local:enableScreenshotButton', {
+    fallback: true,
+});
+
 // Getter functions
 export async function getPlaySfxEnabled(): Promise<boolean> {
     return await playSfxEnabledSetting.getValue();
@@ -150,6 +154,21 @@ export async function setFileNamingTemplate(template: string): Promise<void> {
 
 export function watchFileNamingTemplate(callback: (value: string) => void) {
     return fileNamingTemplateSetting.watch((newValue) => {
+        callback(newValue);
+    });
+}
+
+// Screenshot button setting
+export async function getEnableScreenshotButton(): Promise<boolean> {
+    return await enableScreenshotButtonSetting.getValue();
+}
+
+export async function setEnableScreenshotButton(enabled: boolean): Promise<void> {
+    await enableScreenshotButtonSetting.setValue(enabled);
+}
+
+export function watchEnableScreenshotButton(callback: (value: boolean) => void) {
+    return enableScreenshotButtonSetting.watch((newValue) => {
         callback(newValue);
     });
 }

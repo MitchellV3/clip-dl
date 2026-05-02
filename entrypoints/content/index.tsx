@@ -4,17 +4,34 @@ import Screenshot from './Screenshot'
 import Clipper from './Clipper'
 import { Provider } from "@/components/ui/provider"
 import { Toaster } from "@/components/ui/toaster"
+import { getEnableScreenshotButton, watchEnableScreenshotButton } from '@/lib/repos/settings-repo'
+import { useEffect, useState } from 'react'
+
+function ScreenshotWrapper() {
+    const [enabled, setEnabled] = useState(true)
+  useEffect(() => {
+    const load = async () => {
+      setEnabled(await getEnableScreenshotButton())
+    }
+    void load()
+    const unsubscribe = watchEnableScreenshotButton((value) => {
+      setEnabled(value)
+    })
+    return () => unsubscribe()
+  }, [])
+  return enabled ? <Screenshot /> : null
+}
 
 // Detect which platform we're on and get the appropriate anchor selector
 function getControlsAnchorSelector(): string | null {
   const url = window.location.hostname;
-  
+
   if (url.includes('youtube.com')) {
     return '#movie_player .ytp-right-controls-left';
   } else if (url.includes('twitch.tv')) {
     return '.player-controls__right-control-group';
   }
-  
+
   return null;
 }
 
@@ -46,7 +63,7 @@ export default defineContentScript({
 
         root.render(
           <Provider>
-            <Screenshot />
+            <ScreenshotWrapper />
             <Clipper />
           </Provider>
         )
