@@ -5,16 +5,35 @@ import Clipper from './Clipper'
 import { Provider } from "@/components/ui/provider"
 import { Toaster } from "@/components/ui/toaster"
 
+// Detect which platform we're on and get the appropriate anchor selector
+function getControlsAnchorSelector(): string | null {
+  const url = window.location.hostname;
+  
+  if (url.includes('youtube.com')) {
+    return '#movie_player .ytp-right-controls-left';
+  } else if (url.includes('twitch.tv')) {
+    return '.player-controls__right-control-group';
+  }
+  
+  return null;
+}
+
 export default defineContentScript({
-  matches: ['https://www.youtube.com/*'],
+  matches: ['https://www.youtube.com/*', 'https://www.twitch.tv/*'],
   // Use manifest injection with integrated UI so imported CSS is applied to the page.
   // `cssInjectionMode: 'ui'` is intended for UI-scoped loading flows (eg shadow-root helpers).
   cssInjectionMode: 'manifest',
   async main(ctx) {
-    // Mount controls inside YouTube's player controls.
+    const controlsAnchor = getControlsAnchorSelector();
+    if (!controlsAnchor) {
+      console.warn('clip-dl: Unsupported platform');
+      return;
+    }
+
+    // Mount controls inside the player controls.
     const controlsUi = createIntegratedUi(ctx, {
       position: 'inline',
-      anchor: '#movie_player .ytp-right-controls-left', // The container element to inject into
+      anchor: controlsAnchor, // The container element to inject into
       append(anchor, wrapper) {
         anchor.insertBefore(wrapper, anchor.firstChild) // Add to the leftmost position
       },

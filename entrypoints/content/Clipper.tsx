@@ -618,14 +618,18 @@ function TimeSelection({
   )
 }
 
-const ClipIcon = () => (
-  <svg className={'clip-dl-icon'} filter="drop-shadow(0 0 1px rgba(0, 0, 0, .8))" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#ffffff">
-    <g fill="none" stroke="#ffffff" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5">
-      <path d="M.763 8.25a2.25 2.25 0 1 0 4.5 0a2.25 2.25 0 0 0-4.5 0m0 8.196a2.25 2.25 0 1 0 4.499 0a2.25 2.25 0 0 0-4.499 0" />
-      <path d="m2.34 10.397l7.391 4.381l4.201 2.489M2.34 14.3l4.317-2.559m3.08.259V2.25a1.5 1.5 0 0 1 1.5-1.5h12m0 22.5h-12a1.5 1.5 0 0 1-1.5-1.5V18m4.5-8.25v-9m0 22.5v-3m-4.5-15h4.5m9 9V.75m0 22.5v-9m-13.5-4.5h13.5m-7.5 4.5h7.5" />
-    </g>
-  </svg>
-)
+const ClipIcon = () => {
+  const isTwitch = window.location.hostname.includes('twitch.tv')
+  const className = `clip-dl-icon${isTwitch ? ' clip-dl-icon-twitch' : ''}`
+  return (
+    <svg className={className} filter="drop-shadow(0 0 1px rgba(0, 0, 0, .8))" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#ffffff">
+      <g fill="none" stroke="#ffffff" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5">
+        <path d="M.763 8.25a2.25 2.25 0 1 0 4.5 0a2.25 2.25 0 0 0-4.5 0m0 8.196a2.25 2.25 0 1 0 4.499 0a2.25 2.25 0 0 0-4.499 0" />
+        <path d="m2.34 10.397l7.391 4.381l4.201 2.489M2.34 14.3l4.317-2.559m3.08.259V2.25a1.5 1.5 0 0 1 1.5-1.5h12m0 22.5h-12a1.5 1.5 0 0 1-1.5-1.5V18m4.5-8.25v-9m0 22.5v-3m-4.5-15h4.5m9 9V.75m0 22.5v-9m-13.5-4.5h13.5m-7.5 4.5h7.5" />
+      </g>
+    </svg>
+  )
+}
 
 export default function Clipper() {
   const [isOpen, setIsOpen] = useState(false)
@@ -1273,7 +1277,8 @@ export default function Clipper() {
     }
     window.clip_handleClipOptionClick = (_event: MouseEvent) => { }
   }, [sfxEnabled])
-
+  const isTwitch = window.location.hostname.includes('twitch.tv')
+  console.log('[clip-dl] Rendering Clipper with Twitch mode:', isTwitch)
   return (
     <Popover.Root
       portalled={false}
@@ -1284,7 +1289,7 @@ export default function Clipper() {
         asChild
       >
         <Button
-          className={'ytp-button'}
+          className={'ytp-button ' + (isTwitch ? 'mr-3' : '')}
           onClick={handleToggle}
           display={'flex'}
           alignItems={'center'}

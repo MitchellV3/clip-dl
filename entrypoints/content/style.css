@@ -165,7 +165,29 @@
     opacity: 0.6;
 }
 
-.clip-dl-icon {
+.clip-dl-icon,
+.screenshot-icon {
     height: 60%;
     width: auto;
+}
+
+
+.clip-dl-icon-twitch {
+    width: 22px;
+}
+
+.screenshot-icon-twitch {
+    width: 36px !important;
+}
+
+.ytp-button {
+    border: none;
+    background-color: transparent;
+    padding: 0;
+    color: inherit;
+    text-align: inherit;
+    font-size: 100%;
+    font-family: inherit;
+    cursor: default;
+    line-height: inherit
 }

@@ -10,7 +10,7 @@ export default defineConfig({
     permissions: ['nativeMessaging', "storage", "downloads"],
     web_accessible_resources: [
       {
-        matches: ['https://www.youtube.com/*'],
+        matches: ['https://www.youtube.com/*', 'https://www.twitch.tv/*'],
         resources: ['/sfx/*.wav'],
       },
     ],
