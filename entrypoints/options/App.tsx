@@ -7,7 +7,7 @@ import {
     type DownloadHistoryPage,
     type DownloadHistoryStatus,
 } from '@/lib/repos/download-history-repo';
-import { getPlaySfxEnabled, setPlaySfxEnabled, getShowLiveProcessLog, setShowLiveProcessLog, watchPlaySfxEnabled, watchShowLiveProcessLog, getOrganizeByDate, setOrganizeByDate, getOrganizeBySource, setOrganizeBySource, watchOrganizeByDate, watchOrganizeBySource, getOrganizeByUploader, setOrganizeByUploader, watchOrganizeByUploader, getDownloadDirectory, setDownloadDirectory, watchDownloadDirectory, getDownloader, setDownloader, watchDownloader, getDownloadFileFormat, setDownloadFileFormat, watchDownloadFileFormat, getFileNamingTemplate, setFileNamingTemplate, watchFileNamingTemplate, getEnableScreenshotButton, setEnableScreenshotButton, watchEnableScreenshotButton } from '@/lib/repos/settings-repo';
+import { getPlaySfxEnabled, setPlaySfxEnabled, getShowLiveProcessLog, setShowLiveProcessLog, watchPlaySfxEnabled, watchShowLiveProcessLog, getOrganizeByDate, setOrganizeByDate, getOrganizeBySource, setOrganizeBySource, watchOrganizeByDate, watchOrganizeBySource, getOrganizeByUploader, setOrganizeByUploader, watchOrganizeByUploader, getDownloadDirectory, setDownloadDirectory, watchDownloadDirectory, getDownloader, setDownloader, watchDownloader, getDownloadFileFormat, setDownloadFileFormat, watchDownloadFileFormat, getFileNamingTemplate, setFileNamingTemplate, watchFileNamingTemplate, getEnableScreenshotButton, setEnableScreenshotButton, watchEnableScreenshotButton, getCookiesFile, setCookiesFile, watchCookiesFile } from '@/lib/repos/settings-repo';
 import { createProxyService } from '@webext-core/proxy-service';
 import { Box, Button, CheckboxCard, CheckboxGroup, Field, Grid, Heading, HStack, Input, Text, VStack } from '@chakra-ui/react';
 import type { ChangeEvent } from 'react';
@@ -37,6 +37,7 @@ export default function App() {
     const [fileNamingTemplate, setFileNamingTemplateState] = useState('');
     const [templateSelection, setTemplateSelectionState] = useState('');
     const [enableScreenshotButton, setEnableScreenshotButtonState] = useState(true);
+    const [cookiesFile, setCookiesFileState] = useState('');
 
     const checkboxItems = [
         { value: 'date', title: 'Date', description: 'Organize clips by date (Year -> Month)' },
@@ -178,6 +179,8 @@ export default function App() {
             setSelectedFileFormatState(fileFormat);
             const namingTemplate = await getFileNamingTemplate();
             setFileNamingTemplateState(namingTemplate);
+            const cookiesPath = await getCookiesFile();
+            setCookiesFileState(cookiesPath);
             const screenshotEnabled = await getEnableScreenshotButton();
             setEnableScreenshotButtonState(screenshotEnabled);
             setSelectedOrganize([
@@ -218,6 +221,9 @@ export default function App() {
         });
         watchFileNamingTemplate((value) => {
             setFileNamingTemplateState(value);
+        });
+        watchCookiesFile((value) => {
+            setCookiesFileState(value);
         });
         watchEnableScreenshotButton((value) => {
             setEnableScreenshotButtonState(value);
@@ -328,6 +334,19 @@ export default function App() {
         void setFileNamingTemplate(e.target.value);
     }, []);
 
+    const handleCookiesFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+        setCookiesFileState(e.target.value);
+        void setCookiesFile(e.target.value);
+    }, []);
+
+    const handleBrowseFile = useCallback(async () => {
+        const path = await clipDownloader.pickFile();
+        if (path) {
+            setCookiesFileState(path);
+            await setCookiesFile(path);
+        }
+    }, []);
+
     const handleFileNamingTemplateSelectionChange = useCallback(async (field: string) => {
         setTemplateSelectionState('');
         const newTemplate = fileNamingTemplate + (fileNamingTemplate.trim() ? ' ' : '') + `%(${field})s`;
@@ -349,7 +368,7 @@ export default function App() {
 
                 <Box className="setting-group" display="flex" flexDirection="column" alignItems="center" justifyContent="center">
                     <VStack width="full">
-                        <Field.Root required>
+                        <Field.Root >
                             <Field.Label fontSize="md" fontWeight="medium">
                                 Download Directory:
                             </Field.Label>
@@ -361,7 +380,7 @@ export default function App() {
                         <Text className="help-text">Leave blank to use the default downloads directory.</Text>
                     </VStack>
                     <VStack width="full">
-                        <Field.Root required>
+                        <Field.Root >
                             <Field.Label fontSize="md" fontWeight="medium">
                                 File Naming Template:
                             </Field.Label>
@@ -449,6 +468,8 @@ export default function App() {
                         </CheckboxGroup>
                     </Box>
                 </Box>
+
+
                 {/*
                 <Box className="setting-group">
                     <Heading>Hotkey Settings</Heading>
@@ -585,6 +606,19 @@ export default function App() {
                                     <CheckboxCard.Indicator />
                                 </CheckboxCard.Control>
                             </CheckboxCard.Root>
+
+                            <VStack width="full" flex={1} alignItems="start">
+                                <Field.Root >
+                                    <Field.Label fontSize="md" fontWeight="medium">
+                                        Use Cookies:
+                                    </Field.Label>
+                                    <HStack gap="2" width="100%">
+                                        <Input type="text" id="cookies-file" placeholder="Enter the location of your cookies.txt file" variant="subtle" size="md" border="1px whiteAlpha.100 solid" borderRadius="md" bg="whiteAlpha.100" value={cookiesFile} onChange={handleCookiesFileChange} />
+                                        <Button id="browse-cookies" onClick={handleBrowseFile} border="1px whiteAlpha.100 solid" borderRadius="md" size="lg" bg="whiteAlpha.100" _hover={{ backgroundColor: 'whiteAlpha.200' }}>Browse</Button>
+                                    </HStack>
+                                </Field.Root>
+                                <Text className="help-text">Use of cookies is required to download age-restricted content and can also help bypass certain download restrictions. Export your cookies from your browser and point the downloader to the cookies.txt file. Note that the cookies file will need to be re-exported and updated here periodically as cookies expire. This is theoretically bannable by the content provider so use at your own risk.</Text>
+                            </VStack>
                         </HStack>
 
                     </VStack>

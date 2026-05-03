@@ -25,6 +25,10 @@ export const downloadDirectorySetting = storage.defineItem('local:downloadDirect
     fallback: '',
 });
 
+export const cookiesFileSetting = storage.defineItem('local:cookiesFile', {
+    fallback: '',
+});
+
 export const downloaderSetting = storage.defineItem('local:downloader', {
     fallback: 'native',
 });
@@ -142,6 +146,21 @@ export async function setDownloadDirectory(path: string): Promise<void> {
 
 export function watchDownloadDirectory(callback: (value: string) => void) {
     return downloadDirectorySetting.watch((newValue) => {
+        callback(newValue);
+    });
+}
+
+// Cookies file functions
+export async function getCookiesFile(): Promise<string> {
+    return await cookiesFileSetting.getValue();
+}
+
+export async function setCookiesFile(path: string): Promise<void> {
+    await cookiesFileSetting.setValue(path);
+}
+
+export function watchCookiesFile(callback: (value: string) => void) {
+    return cookiesFileSetting.watch((newValue) => {
         callback(newValue);
     });
 }

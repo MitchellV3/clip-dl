@@ -273,6 +273,10 @@ def _validate_download_clip_request(message: dict[str, Any]) -> tuple[dict[str, 
     if isinstance(file_naming_template, str) and file_naming_template:
         validated_request['fileNamingTemplate'] = file_naming_template
 
+    cookies_file = message.get('cookiesFile')
+    if isinstance(cookies_file, str):
+        validated_request['cookiesFile'] = cookies_file
+
     return validated_request, None
 
 
@@ -323,6 +327,10 @@ def _validate_download_full_video_request(message: dict[str, Any]) -> tuple[dict
     if isinstance(file_naming_template, str) and file_naming_template:
         validated_request['fileNamingTemplate'] = file_naming_template
 
+    cookies_file = message.get('cookiesFile')
+    if isinstance(cookies_file, str):
+        validated_request['cookiesFile'] = cookies_file
+
     return validated_request, None
 
 
@@ -368,6 +376,13 @@ def _validate_pick_directory_request(message: dict[str, Any]) -> tuple[dict[str,
     return {'type': 'pick-directory'}, None
 
 
+def _validate_pick_file_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    if message.get('type') != 'pick-file':
+        return None, _error_response('bad-request', "Expected request type 'pick-file'.")
+
+    return {'type': 'pick-file'}, None
+
+
 def _validate_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     request_type = message.get('type')
 
@@ -386,7 +401,10 @@ def _validate_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, d
     if request_type == 'pick-directory':
         return _validate_pick_directory_request(message)
 
-    return None, _error_response('bad-request', "Expected request type 'download-clip', 'download-full-video', 'show-downloaded-clip-in-folder', 'get-video-formats', or 'pick-directory'.")
+    if request_type == 'pick-file':
+        return _validate_pick_file_request(message)
+
+    return None, _error_response('bad-request', "Expected request type 'download-clip', 'download-full-video', 'show-downloaded-clip-in-folder', 'get-video-formats', 'pick-directory', or 'pick-file'.")
 
 
 def _require_tool(tool_name: str) -> tuple[str | None, dict[str, Any] | None]:
@@ -555,6 +573,7 @@ def _resolve_effective_path(downloads_path: Path, request: dict[str, Any]) -> Pa
 def _build_download_command(request: dict[str, Any], downloads_path: Path) -> list[str]:
     audio_only = request.get('audioOnly', False)
     downloader = request.get('downloader', 'native')
+    cookies_file = request.get('cookiesFile', '')
 
     effective_path = _resolve_effective_path(downloads_path, request)
 
@@ -579,6 +598,9 @@ def _build_download_command(request: dict[str, Any], downloads_path: Path) -> li
         '--embed-metadata',  # Embeds all available metadata (title, uploader, URL, description, upload date, etc.)
         '--embed-thumbnail',  # Downloads and embeds the video thumbnail as poster image
     ])
+
+    if isinstance(cookies_file, str) and cookies_file.strip():
+        command.extend(['--cookies', cookies_file])
 
     if request['type'] == 'download-clip':
         # yt-dlp still owns the YouTube extraction/download phase. We keep the
@@ -1062,6 +1084,38 @@ def main() -> int:
         except Exception as error:
             logger.error(f'Failed to pick directory: {error}')
             _write_native_message(_error_response('pick-directory-failed', f'Failed to show directory picker: {error}'))
+        return 0
+
+    if request['type'] == 'pick-file':
+        logger.info('Picking file via native file dialog')
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+
+            root = tk.Tk()
+            root.withdraw()
+            file_path = filedialog.askopenfilename(
+                parent=root,
+                title='Select cookies.txt file',
+                filetypes=[('Cookies files', '*.txt'), ('All files', '*.*')],
+            )
+            root.destroy()
+
+            if file_path:
+                logger.info(f'Selected file: {file_path}')
+                _write_native_message({
+                    'ok': True,
+                    'filePath': file_path,
+                })
+            else:
+                logger.info('File selection cancelled')
+                _write_native_message({
+                    'ok': True,
+                    'filePath': None,
+                })
+        except Exception as error:
+            logger.error(f'Failed to pick file: {error}')
+            _write_native_message(_error_response('pick-file-failed', f'Failed to show file picker: {error}'))
         return 0
 
     user_downloads_path = request.get('downloadsPath', '')

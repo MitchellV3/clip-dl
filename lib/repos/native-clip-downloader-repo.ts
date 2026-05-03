@@ -1,5 +1,5 @@
 import { saveDownloadHistoryEntry } from './download-history-repo'
-import { getDownloadDirectory, getDownloader, getDownloadFileFormat, getFileNamingTemplate } from './settings-repo'
+import { getCookiesFile, getDownloadDirectory, getDownloader, getDownloadFileFormat, getFileNamingTemplate } from './settings-repo'
 
 const NATIVE_HOST_NAME = 'com.clip_dl.clip_downloader'
 
@@ -19,6 +19,7 @@ export interface ClipRangeDownloadRequest {
     organizeByUploader?: boolean
     downloadsPath?: string
     downloader?: string
+    cookiesFile?: string
 }
 
 export interface FullVideoDownloadRequest {
@@ -35,6 +36,7 @@ export interface FullVideoDownloadRequest {
     organizeByUploader?: boolean
     downloadsPath?: string
     downloader?: string
+    cookiesFile?: string
 }
 
 export type ClipDownloadRequest = ClipRangeDownloadRequest | FullVideoDownloadRequest
@@ -66,6 +68,10 @@ export interface ShowDownloadedClipInFolderRequest {
     type: 'show-downloaded-clip-in-folder'
     outputPath: string
     highlightFile?: boolean
+}
+
+export interface PickFileRequest {
+    type: 'pick-file'
 }
 
 export interface SuccessfulClipRangeDownloadResult {
@@ -126,7 +132,8 @@ export function NativeClipDownloaderRepo() {
             const downloader = await getDownloader();
             const fileFormat = await getDownloadFileFormat();
             const fileNamingTemplate = await getFileNamingTemplate();
-            const requestPayload = { ...payload, downloadsPath, downloader, fileFormat, fileNamingTemplate } as ClipDownloadRequest;
+            const cookiesFile = await getCookiesFile();
+            const requestPayload = { ...payload, downloadsPath, downloader, fileFormat, fileNamingTemplate, cookiesFile } as ClipDownloadRequest;
             console.warn(`[clip-dl] downloadClip: downloadsPath="${downloadsPath}", downloader="${downloader}", type=${requestPayload.type}`);
             console.warn(`[clip-dl] Native message payload: ${JSON.stringify(requestPayload)}`);
             // The background script owns native messaging. Content scripts must proxy
@@ -208,11 +215,28 @@ export function NativeClipDownloaderRepo() {
         }
     }
 
+    const pickFile = async (): Promise<string | null> => {
+        try {
+            const response = await browser.runtime.sendNativeMessage(NATIVE_HOST_NAME, {
+                type: 'pick-file',
+            }) as { ok: boolean; filePath: string | null };
+
+            if (response.ok && response.filePath) {
+                return response.filePath;
+            }
+            return null;
+        } catch (error) {
+            console.warn('[clip-dl] Failed to pick file:', error);
+            return null;
+        }
+    }
+
     return {
         downloadClip,
         showDownloadedClipInFolder,
         getVideoFormats,
         pickDirectory,
+        pickFile,
     }
 
 
