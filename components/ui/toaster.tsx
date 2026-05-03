@@ -1,14 +1,15 @@
 "use client"
 
 import {
+  Center,
   Toaster as ChakraToaster,
   Portal,
-  Spinner,
   Stack,
   Toast,
   VStack,
   createToaster,
 } from "@chakra-ui/react"
+import { CustomSpinner } from "./custom-spinner"
 
 export const toaster = createToaster({
   placement: "bottom-end",
@@ -35,18 +36,17 @@ export const Toaster = () => {
             transition={"all 0.5s ease-in-out"}
             border={"1px solid rgba(255, 255, 255, 0.2)"}
             _hover={{ borderColor: "white" }}
+            className="toast-wrapper"
           >
             {toast.type === "loading" ? (
-              <Spinner
-                size="xl"
-                color="blue.solid" />
+              <CustomSpinner size="lg" />
             ) : (
               <Toast.Indicator />
             )}
             <VStack
               gap="4"
-              //flex="1"
-              maxWidth="100%" alignItems={"flex-start"}
+              flex="1"
+              maxWidth="80%" alignItems={"flex-start"}
             >
               {toast.title &&
                 <Toast.Title
@@ -68,14 +68,15 @@ export const Toaster = () => {
                 display={"flex"}
                 fontSize={"xl"}
                 background={"transparent"}
-                padding={"12px"}
+                padding={'4px 6px'}
                 borderRadius={"md"}
-                alignItems={"center"}
+                alignItems={"flex-end"}
                 justifyContent={"center"}
                 border={"1px solid rgba(255, 255, 255, 0.2)"}
                 _hover={{ background: "whiteAlpha.200", borderColor: "white" }}
                 transition={"background 0.2s ease-in-out, border-color 0.2s ease-in-out"}
-
+                height={'auto'}
+                width={'20%'}
               >
                 {toast.action.label}
               </Toast.ActionTrigger>
