@@ -27,6 +27,8 @@ It uses native messaging to communicate with a Python host script that runs [`yt
 - **Disk space checks** — Automatic validation before downloads
 - **Sound effects** — Optional audio feedback for actions
 - **Show in folder** — Quickly locate downloaded clips
+- **Download history** — View and manage past downloads in the options page
+- **Browser cookie support** — Export your cookies from Chrome to download age-restricted/private videos
 
 ## Architecture
 
@@ -171,7 +173,9 @@ Click the extension icon → **Options** to configure:
 - **Organization** — Organize by date/source/uploader or any combination of the three
 - **Live process log** — Show/hide the progress console window
 - **Sound effects** — Enable/disable audio feedback
+- **Show screenshot button** — Toggle the screenshot capture feature in the clipper UI
 - **Download history** — View and manage past downloads
+- **Cookie support** — Export cookies from Chrome for age-restricted/private videos
 
 ## Supported Platforms
 
