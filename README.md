@@ -30,63 +30,36 @@ It uses native messaging to communicate with a Python host script that runs [`yt
 - **Download history** — View and manage past downloads in the options page
 - **Browser cookie support** — Export your cookies from Chrome to download age-restricted/private videos
 
-## Architecture
-
-```
-+------------------------------------------------------------------------+
-|                            Browser Extension                           |
-|  +------------------+    +------------------+    +------------------+  |    
-|  | Content:         |    |Background:       |    | Options Page:    |  |   
-|  | Clipper.tsx      | -> |Service           | -> | Settings/History |  |   
-|  | (YouTube/Twitch UI)   |                  |    |                  |  |
-|  +------------------+    +------------------+    +------------------+  |    
-|                                   |                                    |
-|                        @webextcore/proxyservice                        |         
-+-----------------------------------|------------------------------------+
-                              Native|Messaging
-                                    v
-+------------------------------------------------------------------------+
-|                       Python Native Host                               |
-|                       host/clip_downloader.py                          |
-|  +------------------+    +------------------+    +------------------+  |
-|  | yt-dlp           |    | ffmpeg           |    | ffprobe          |  |
-|  | Download         |    | Remux/Trim       |    | Analyze          |  |
-|  +------------------+    +------------------+    +------------------+  |
-+------------------------------------------------------------------------+
-```
-
-**Flow:**
-
-1. **Clipper.tsx** (content script) gathers the video URL and clip time range from the page
-2. **@webext-core/proxy-service** forwards the request to the background script
-3. Background script calls Chrome native messaging
-4. Chrome starts **clip_downloader.py**, sends a JSON request via stdin
-5. Python host runs **yt-dlp** to download, then **ffmpeg** to remux/trim
-6. Result (file path) is returned via stdout
-
 ## Prerequisites
 
 Before installing, ensure these tools are installed and available on your `PATH`:
 
-- **Python** 3.8+
-- **yt-dlp** — Video downloader
-- **ffmpeg** — Multimedia processor (for remuxing clips)
-- **ffprobe** — Media analyzer (bundled with ffmpeg)
+- [**Python**](https://www.python.org/) 3.10+
+- [**yt-dlp**](https://github.com/yt-dlp/yt-dlp)
+  - For full functionality, yt-dlp also requires:
+    - [**yt-dlp-ejs**](https://github.com/yt-dlp/ejs)
+    - [**Deno**](https://deno.com/)
+  - Optional (for embedding more metadata):
+    - [**Mutagen**](https://mutagen.readthedocs.io/en/latest/)
+    - [**AtomicParsley**](https://github.com/wez/atomicparsley)
+- [**ffmpeg/ffprobe**](https://www.ffmpeg.org/) — (for remuxing clips). Ensure you have the binary from the official site, not the python package.
 
 Verify installation:
 
-```powershell
+```bash
 python --version
 yt-dlp --version
+deno --version
 ffmpeg -version
 ffprobe -version
+pip show mutagen yt-dlp-ejs
 ```
 
 ## Installation
 
 ### 1. Build the extension
 
-```powershell
+```bash
 # Install dependencies
 pnpm install
 
@@ -182,6 +155,40 @@ Click the extension icon → **Options** to configure:
 - **Browsers:** Chrome, Edge
 - **OS:** Windows (native host registration is Windows-specific)
 - **Sites:** YouTube, Twitch
+
+## Architecture
+
+```
++------------------------------------------------------------------------+
+|                            Browser Extension                           |
+|  +------------------+    +------------------+    +------------------+  |    
+|  | Content:         |    |Background:       |    | Options Page:    |  |   
+|  | Clipper.tsx      | -> |Service           | -> | Settings/History |  |   
+|  | (YouTube/Twitch UI)   |                  |    |                  |  |
+|  +------------------+    +------------------+    +------------------+  |    
+|                                   |                                    |
+|                        @webextcore/proxyservice                        |         
++-----------------------------------|------------------------------------+
+                              Native|Messaging
+                                    v
++------------------------------------------------------------------------+
+|                       Python Native Host                               |
+|                       host/clip_downloader.py                          |
+|  +------------------+    +------------------+    +------------------+  |
+|  | yt-dlp           |    | ffmpeg           |    | ffprobe          |  |
+|  | Download         |    | Remux/Trim       |    | Analyze          |  |
+|  +------------------+    +------------------+    +------------------+  |
++------------------------------------------------------------------------+
+```
+
+**Flow:**
+
+1. **Clipper.tsx** (content script) gathers the video URL and clip time range from the page
+2. **@webext-core/proxy-service** forwards the request to the background script
+3. Background script calls Chrome native messaging
+4. Chrome starts **clip_downloader.py**, sends a JSON request via stdin
+5. Python host runs **yt-dlp** to download, then **ffmpeg** to remux/trim
+6. Result (file path) is returned via stdout
 
 ## File Structure
 
