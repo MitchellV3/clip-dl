@@ -18,7 +18,7 @@ export default defineConfig({
         resources: ['/sfx/*.wav'],
       },
     ],
-
+    action: {},
   },
   vite: () => ({
     plugins: [tailwindcss() as any],
