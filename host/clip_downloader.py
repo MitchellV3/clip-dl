@@ -104,6 +104,15 @@ def _validate_download_request_fields(message: dict[str, Any], label_error_messa
     return url, label, bool(audio_only), None, downloader
 
 
+def _validated_video_title(message: dict[str, Any]) -> str | None:
+    video_title = message.get('videoTitle')
+    if isinstance(video_title, str):
+        cleaned = video_title.strip()
+        if cleaned:
+            return cleaned
+    return None
+
+
 def _get_video_formats(url: str) -> list[dict[str, str]]:
     """
     Fetch and normalize video formats from yt-dlp.
@@ -311,6 +320,10 @@ def _validate_download_clip_request(message: dict[str, Any]) -> tuple[dict[str, 
     if isinstance(cookies_file, str):
         validated_request['cookiesFile'] = cookies_file
 
+    video_title = _validated_video_title(message)
+    if video_title is not None:
+        validated_request['videoTitle'] = video_title
+
     return validated_request, None
 
 
@@ -364,6 +377,10 @@ def _validate_download_full_video_request(message: dict[str, Any]) -> tuple[dict
     cookies_file = message.get('cookiesFile')
     if isinstance(cookies_file, str):
         validated_request['cookiesFile'] = cookies_file
+
+    video_title = _validated_video_title(message)
+    if video_title is not None:
+        validated_request['videoTitle'] = video_title
 
     return validated_request, None
 
@@ -582,8 +599,16 @@ def _build_temp_output_template(request: dict[str, Any]) -> str:
                 user_template = user_template + '.%(ext)s'
             user_template = user_template.replace('.%(ext)s', '.clip-dl-temp.%(ext)s')
             return user_template
-        # For livestream, use a simpler template without time info
-        return f'(%(upload_date>%Y-%m-%d)s)_%(title).180B_%(epoch)s_[%(id)s].clip-dl-temp.%(ext)s'
+        # For livestreams, avoid yt-dlp date fields that may resolve to NA.
+        # Use the current date as a stable prefix and keep the rest of the
+        # filename based on the stream title / ID.
+        now = time.localtime()
+        date_prefix = f'({now.tm_year:04d}-{now.tm_mon:02d}-{now.tm_mday:02d})'
+        requested_title = request.get('videoTitle')
+        if isinstance(requested_title, str) and requested_title.strip():
+            title_token = _sanitize_file_token(requested_title.strip())
+            return f'{date_prefix}_{title_token}.180B_%(epoch)s_[%(id)s].clip-dl-temp.%(ext)s'
+        return f'{date_prefix}_%(title).180B_%(epoch)s_[%(id)s].clip-dl-temp.%(ext)s'
     
     # Regular clip: has startTimeSeconds/endTimeSeconds
     start_ms = int(round(request['startTimeSeconds'] * 1000))
@@ -804,10 +829,10 @@ def _build_ypb_command(request: dict[str, Any], downloads_path: Path) -> list[st
     if isinstance(cookies_file, str) and cookies_file.strip():
         yt_dlp_args.extend(['--cookies', cookies_file])
     
-    # For ypb/yt-dlp integration with clips, we use the temp output template
-    # (same as regular clips so remux post-processing works)
+    # ypb already handles interval extraction/merge for livestream rewinds, so we
+    # output directly to a final file template (no extra clip-dl remux stage).
     yt_dlp_args.extend([
-        '--output', _build_temp_output_template(request),
+        '--output', _build_full_video_output_template(request),
     ])
     
     if audio_only:
@@ -858,10 +883,22 @@ def _derive_final_output_path(temp_download_path: Path) -> Path:
 
 
 def _extract_output_path(stdout: str) -> Path | None:
-    for line in reversed(stdout.splitlines()):
+    lines = stdout.splitlines()
+
+    # Prefer explicit yt-dlp print output when available.
+    for line in reversed(lines):
         candidate = line.strip()
+        if candidate.startswith('after_move:'):
+            path_text = candidate[len('after_move:'):].strip().strip('"')
+            if path_text and (':\\' in path_text or path_text.startswith('\\\\')):
+                return Path(path_text)
+
+    # Fallback: bare absolute path lines.
+    for line in reversed(lines):
+        candidate = line.strip().strip('"')
         if candidate and (':\\' in candidate or candidate.startswith('\\\\')):
             return Path(candidate)
+
     return None
 
 
@@ -925,6 +962,7 @@ def _run_visible_download(job_path: Path) -> int:
     job = _read_json(job_path)
     download_command = job['downloadCommand']
     request_type = job.get('requestType', 'download-clip')
+    is_livestream = bool(job.get('isLivestream', False))
     result_path = Path(job['resultPath'])
     stdout_path = Path(job['stdoutPath'])
     stderr_path = Path(job['stderrPath'])
@@ -981,7 +1019,10 @@ def _run_visible_download(job_path: Path) -> int:
         logger.error(f'yt-dlp download stage failed with return code {download_returncode}')
 
     remux_returncode = 0
-    if download_returncode == 0 and request_type == 'download-clip' and downloaded_output_path is not None:
+    if download_returncode == 0 and request_type == 'download-clip' and downloaded_output_path is not None and is_livestream:
+        final_output_path = downloaded_output_path
+        logger.info(f'Livestream clip download does not require a remux stage: {final_output_path}')
+    elif download_returncode == 0 and request_type == 'download-clip' and downloaded_output_path is not None:
         final_output_path = _derive_final_output_path(downloaded_output_path)
         audio_only = job.get('audioOnly', False)
         logger.info(f'Starting ffmpeg remux stage: {downloaded_output_path} -> {final_output_path}')
@@ -1018,7 +1059,7 @@ def _run_visible_download(job_path: Path) -> int:
         logger.info('Download completed successfully')
         print('')
         print('[clip-dl native host] Download completed.')
-        if request_type == 'download-clip' and downloaded_output_path is not None and downloaded_output_path.exists():
+        if request_type == 'download-clip' and not is_livestream and downloaded_output_path is not None and downloaded_output_path.exists():
             try:
                 downloaded_output_path.unlink()
                 logger.info(f'Removed temp clip: {downloaded_output_path}')
@@ -1037,7 +1078,11 @@ def _run_visible_download(job_path: Path) -> int:
 
 def _run_command_silently(request: dict[str, Any], downloads_path: Path) -> subprocess.CompletedProcess[str]:
     """Run yt-dlp/ffmpeg silently without spawning a visible console window."""
-    download_command = _build_download_command(request, downloads_path)
+    is_livestream = bool(request.get('livestream', False))
+    if is_livestream and request['type'] == 'download-clip':
+        download_command = _build_ypb_command(request, downloads_path)
+    else:
+        download_command = _build_download_command(request, downloads_path)
     combined_output: list[str] = []
 
     logger.info('Starting yt-dlp download stage (silent mode)')
@@ -1064,7 +1109,10 @@ def _run_command_silently(request: dict[str, Any], downloads_path: Path) -> subp
         logger.error(f'yt-dlp download stage failed with return code {download_returncode} (silent mode)')
 
     final_output_path: Path | None = None
-    if download_returncode == 0 and request['type'] == 'download-clip' and downloaded_output_path is not None:
+    if download_returncode == 0 and request['type'] == 'download-clip' and downloaded_output_path is not None and is_livestream:
+        final_output_path = downloaded_output_path
+        logger.info(f'Livestream clip download does not require a remux stage (silent mode): {final_output_path}')
+    elif download_returncode == 0 and request['type'] == 'download-clip' and downloaded_output_path is not None:
         final_output_path = _derive_final_output_path(downloaded_output_path)
         audio_only = request.get('audioOnly', False)
         logger.info(f'Starting ffmpeg remux stage (silent mode): {downloaded_output_path} -> {final_output_path}')
@@ -1087,7 +1135,7 @@ def _run_command_silently(request: dict[str, Any], downloads_path: Path) -> subp
         final_output_path = downloaded_output_path
         logger.info(f'Full video download does not require a remux stage (silent mode): {final_output_path}')
 
-    if download_returncode == 0 and request['type'] == 'download-clip' and downloaded_output_path is not None:
+    if download_returncode == 0 and request['type'] == 'download-clip' and not is_livestream and downloaded_output_path is not None:
         try:
             downloaded_output_path.unlink()
             logger.info(f'Removed temp clip: {downloaded_output_path}')
@@ -1110,6 +1158,7 @@ def _run_command_with_visible_progress(download_command: list[str], request: dic
         _write_json(job_path, {
             'downloadCommand': download_command,
             'requestType': request['type'],
+            'isLivestream': bool(request.get('livestream', False)),
             'resultPath': str(result_path),
             'stdoutPath': str(stdout_path),
             'stderrPath': str(stderr_path),

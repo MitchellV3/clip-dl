@@ -55,6 +55,14 @@ function formatTimeDisplay(seconds: number) {
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
 }
 
+function getPageVideoTitle() {
+  const rawTitle = document.title || ''
+  return rawTitle
+    .replace(/\s*-\s*YouTube\s*$/i, '')
+    .replace(/\s*-\s*Twitch\s*$/i, '')
+    .trim()
+}
+
 const TIMELINE_PREVIEW_OVERLAY_ID = 'clip-dl-timeline-preview-overlay'
 
 function clearTimelinePreviewOverlay() {
@@ -1205,6 +1213,7 @@ export default function Clipper() {
       const request: FullVideoDownloadRequest = {
         type: 'download-full-video',
         url: window.location.href,
+        videoTitle: getPageVideoTitle(),
         label: 'Full Video',
         audioOnly: clipState.audioOnly,
         fileFormat,
@@ -1236,6 +1245,7 @@ export default function Clipper() {
     const request: ClipRangeDownloadRequest = {
       type: 'download-clip',
       url: window.location.href,
+      videoTitle: getPageVideoTitle(),
       label,
       audioOnly: clipState.audioOnly,
       fileFormat,

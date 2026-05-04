@@ -6,6 +6,7 @@ const NATIVE_HOST_NAME = 'com.clip_dl.clip_downloader'
 export interface ClipRangeDownloadRequest {
     type: 'download-clip'
     url: string
+    videoTitle?: string
     startTimeSeconds?: number
     endTimeSeconds?: number
     label: string
@@ -27,6 +28,7 @@ export interface ClipRangeDownloadRequest {
 export interface FullVideoDownloadRequest {
     type: 'download-full-video'
     url: string
+    videoTitle?: string
     label: string
     audioOnly?: boolean
     formatSelector?: string
