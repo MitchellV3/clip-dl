@@ -648,6 +648,10 @@ def _build_download_command(request: dict[str, Any], downloads_path: Path) -> li
         ])
     else:
         command.extend([
+            '--live-from-start',
+            '--embed-subs',
+            '--embed-info-json',
+            '--embed-chapters',
             '--output', _build_full_video_output_template(request),
         ])
 
