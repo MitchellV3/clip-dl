@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -636,6 +637,13 @@ def _build_full_video_output_template(request: dict[str, Any]) -> str:
             user_template = user_template + '.%(ext)s'
         return user_template
 
+    requested_title = request.get('videoTitle')
+    if isinstance(requested_title, str) and requested_title.strip():
+        now = time.localtime()
+        date_prefix = f'({now.tm_year:04d}-{now.tm_mon:02d}-{now.tm_mday:02d})'
+        title_token = _sanitize_file_token(requested_title.strip())
+        return f'{date_prefix}_{title_token}.180B_%(epoch)s_[%(id)s].%(ext)s'
+
     label_token = _sanitize_file_token(request['label']).lower()
     return f'(%(upload_date>%Y-%m-%d)s)_%(title).180B_%(epoch)s_[%(id)s].%(ext)s'
 
@@ -884,22 +892,98 @@ def _derive_final_output_path(temp_download_path: Path) -> Path:
 
 def _extract_output_path(stdout: str) -> Path | None:
     lines = stdout.splitlines()
+    path_pattern = re.compile(r'([A-Za-z]:\\[^"\r\n]+|\\\\[^"\r\n]+)')
+
+    def _clean_candidate_path(raw_path: str) -> Path | None:
+        normalized = raw_path.strip().strip('"').strip("'")
+        if normalized.startswith('file:'):
+            normalized = normalized[5:]
+        if not normalized:
+            return None
+        if ':\\' not in normalized and not normalized.startswith('\\\\'):
+            return None
+        return Path(normalized)
+
+    def _extract_candidates_from_line(line: str) -> list[Path]:
+        extracted: list[Path] = []
+        for match in path_pattern.finditer(line):
+            maybe_path = _clean_candidate_path(match.group(1))
+            if maybe_path is not None:
+                extracted.append(maybe_path)
+        return extracted
 
     # Prefer explicit yt-dlp print output when available.
     for line in reversed(lines):
         candidate = line.strip()
         if candidate.startswith('after_move:'):
-            path_text = candidate[len('after_move:'):].strip().strip('"')
-            if path_text and (':\\' in path_text or path_text.startswith('\\\\')):
-                return Path(path_text)
+            path_text = candidate[len('after_move:'):].strip()
+            path_candidate = _clean_candidate_path(path_text)
+            if path_candidate is not None:
+                return path_candidate
 
-    # Fallback: bare absolute path lines.
+    # Next, look for explicit destination/finalization lines and prefer paths that exist.
+    high_signal_markers = ('Destination:', 'Merging formats into', 'Adding metadata to')
+    marker_candidates: list[Path] = []
+    for line in lines:
+        if any(marker in line for marker in high_signal_markers):
+            marker_candidates.extend(_extract_candidates_from_line(line))
+
+    for candidate in reversed(marker_candidates):
+        if candidate.exists():
+            return candidate
+    if marker_candidates:
+        return marker_candidates[-1]
+
+    # Fallback: any absolute path token in output (prefer existing paths).
+    all_candidates: list[Path] = []
     for line in reversed(lines):
-        candidate = line.strip().strip('"')
-        if candidate and (':\\' in candidate or candidate.startswith('\\\\')):
-            return Path(candidate)
+        all_candidates.extend(_extract_candidates_from_line(line))
+
+    for candidate in all_candidates:
+        if candidate.exists():
+            return candidate
+    if all_candidates:
+        return all_candidates[0]
 
     return None
+
+
+def _resolve_missing_output_path(expected_path: Path) -> Path | None:
+    """
+    Attempt to recover when the parsed output path is stale/incorrect.
+
+    For ypb+yt-dlp livestream downloads, the title portion of the filename can
+    differ from what earlier log lines suggest, while the trailing
+    _<epoch>_[<id>].<ext> segment stays stable. We search the target directory
+    for a file with the same stable suffix.
+    """
+    if expected_path.exists():
+        return expected_path
+
+    parent = expected_path.parent
+    if not parent.exists() or not parent.is_dir():
+        return None
+
+    match = re.search(r'_(\d+)_\[([^\]]+)\](\.[^.]+)$', expected_path.name)
+    if not match:
+        return None
+
+    epoch = match.group(1)
+    media_id = match.group(2)
+    extension = match.group(3)
+
+    suffix_pattern = re.compile(rf'_{re.escape(epoch)}_\[{re.escape(media_id)}\]{re.escape(extension)}$')
+    candidates: list[Path] = []
+    for child in parent.iterdir():
+        if child.is_file() and suffix_pattern.search(child.name):
+            candidates.append(child)
+
+    if not candidates:
+        return None
+
+    # Prefer the freshest candidate in case multiple files share the same tail.
+    candidates.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    return candidates[0]
 
 
 def _is_process_alive(pid: int) -> bool:
@@ -1545,6 +1629,15 @@ def main() -> int:
         return 0
 
     output_path = getattr(completed_process, 'resolved_final_output_path', None)
+    if isinstance(output_path, str):
+        output_path = Path(output_path)
+
+    if output_path is not None and not output_path.exists():
+        recovered_path = _resolve_missing_output_path(output_path)
+        if recovered_path is not None:
+            logger.warning(f'Output path mismatch recovered: expected={output_path} resolved={recovered_path}')
+            output_path = recovered_path
+
     if output_path is None or not output_path.exists():
         logger.error('Download finished but the final output file was not found')
         _write_native_message(_error_response('download-failed', 'Download finished but the output file was not found.'))
