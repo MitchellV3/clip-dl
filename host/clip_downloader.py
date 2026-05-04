@@ -368,6 +368,20 @@ def _validate_delete_file_request(message: dict[str, Any]) -> tuple[dict[str, An
     }, None
 
 
+def _validate_check_file_exists_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    if message.get('type') != 'check-file-exists':
+        return None, _error_response('bad-request', "Expected request type 'check-file-exists'.")
+
+    output_path = message.get('outputPath')
+    if not isinstance(output_path, str) or not output_path.strip():
+        return None, _error_response('bad-request', 'A non-empty outputPath is required.')
+
+    return {
+        'type': 'check-file-exists',
+        'outputPath': output_path,
+    }, None
+
+
 def _validate_get_video_formats_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     if message.get('type') != 'get-video-formats':
         return None, _error_response('bad-request', "Expected request type 'get-video-formats'.")
@@ -412,6 +426,9 @@ def _validate_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, d
     if request_type == 'delete-file':
         return _validate_delete_file_request(message)
 
+    if request_type == 'check-file-exists':
+        return _validate_check_file_exists_request(message)
+
     if request_type == 'get-video-formats':
         return _validate_get_video_formats_request(message)
 
@@ -421,7 +438,7 @@ def _validate_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, d
     if request_type == 'pick-file':
         return _validate_pick_file_request(message)
 
-    return None, _error_response('bad-request', "Expected request type 'download-clip', 'download-full-video', 'show-downloaded-clip-in-folder', 'delete-file', 'get-video-formats', 'pick-directory', or 'pick-file'.")
+    return None, _error_response('bad-request', "Expected request type 'download-clip', 'download-full-video', 'show-downloaded-clip-in-folder', 'delete-file', 'check-file-exists', 'get-video-formats', 'pick-directory', or 'pick-file'.")
 
 
 def _require_tool(tool_name: str) -> tuple[str | None, dict[str, Any] | None]:
@@ -1025,6 +1042,17 @@ def _delete_downloaded_file(output_path: str) -> tuple[bool, str | None]:
         return False, f'Failed to delete file: {error}'
 
 
+def _check_file_exists(output_path: str) -> tuple[bool, bool, str | None]:
+    target_path = Path(output_path).expanduser()
+
+    try:
+        exists = target_path.exists()
+        is_file = target_path.is_file() if exists else False
+        return True, bool(exists and is_file), None
+    except Exception as error:
+        return False, False, f'Failed to check file availability: {error}'
+
+
 def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == '--self-test':
         return _run_self_test()
@@ -1087,6 +1115,21 @@ def main() -> int:
         _write_native_message({
             'ok': True,
             'deleted': True,
+            'outputPath': request['outputPath'],
+        })
+        return 0
+
+    if request['type'] == 'check-file-exists':
+        logger.info(f'Checking downloaded file availability: {request["outputPath"]}')
+        checked, exists, error_message = _check_file_exists(request['outputPath'])
+        if not checked:
+            logger.error(f'Failed to check file availability: {error_message}')
+            _write_native_message(_error_response('check-file-failed', error_message or 'Failed to check file availability.'))
+            return 0
+
+        _write_native_message({
+            'ok': True,
+            'exists': exists,
             'outputPath': request['outputPath'],
         })
         return 0

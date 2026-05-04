@@ -75,6 +75,11 @@ export interface DeleteFileRequest {
     outputPath: string
 }
 
+export interface CheckFileExistsRequest {
+    type: 'check-file-exists'
+    outputPath: string
+}
+
 export interface PickFileRequest {
     type: 'pick-file'
 }
@@ -255,10 +260,30 @@ export function NativeClipDownloaderRepo() {
         }
     }
 
+    const fileExists = async (outputPath: string): Promise<boolean> => {
+        try {
+            const payload: CheckFileExistsRequest = {
+                type: 'check-file-exists',
+                outputPath,
+            }
+
+            const response = await browser.runtime.sendNativeMessage(NATIVE_HOST_NAME, payload) as {
+                ok?: boolean
+                exists?: boolean
+            }
+
+            return Boolean(response?.ok && response?.exists)
+        } catch (error) {
+            console.warn('[clip-dl] Check file exists error:', error)
+            return false
+        }
+    }
+
     return {
         downloadClip,
         showDownloadedClipInFolder,
         deleteFile,
+        fileExists,
         getVideoFormats,
         pickDirectory,
         pickFile,

@@ -25,6 +25,8 @@ export default function App() {
     const [historyStatusFilter, setHistoryStatusFilter] = useState<DownloadHistoryStatus | 'all'>('all');
     const [historyQuery, setHistoryQuery] = useState('');
     const [busyEntryId, setBusyEntryId] = useState<string | null>(null);
+    const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
+    const [unavailableFileEntryIds, setUnavailableFileEntryIds] = useState<string[]>([]);
     const [playSfxEnabled, setPlaySfxEnabledState] = useState(true);
     const [showLiveProcessLogEnabled, setShowLiveProcessLogState] = useState(false);
     const [organizeByDate, setOrganizeByDateState] = useState(false);
@@ -244,28 +246,70 @@ export default function App() {
         if (!entry.outputPath) return;
         setBusyEntryId(entry.id);
         try {
-            await clipDownloader.showDownloadedClipInFolder(entry.outputPath, true);
+            const opened = await clipDownloader.showDownloadedClipInFolder(entry.outputPath, true);
+            if (!opened) {
+                setUnavailableFileEntryIds((current) => current.includes(entry.id) ? current : [...current, entry.id]);
+            }
         } finally {
             setBusyEntryId(null);
         }
     }, []);
 
-    const handleDeleteFile = useCallback(async (entry: DownloadHistoryEntry) => {
+    const handleDeleteFile = useCallback(async (entry: DownloadHistoryEntry, removeEntryFromHistory: boolean) => {
         if (!entry.outputPath || entry.status !== 'completed') return;
 
         setBusyEntryId(entry.id);
+        setDeletingEntryId(entry.id);
         try {
             const deleted = await clipDownloader.deleteFile(entry.outputPath);
             if (!deleted) {
+                setUnavailableFileEntryIds((current) => current.includes(entry.id) ? current : [...current, entry.id]);
                 setHistoryError('Failed to delete the downloaded file. It may already be missing or locked by another process.');
                 return;
+            }
+
+            setUnavailableFileEntryIds((current) => current.includes(entry.id) ? current : [...current, entry.id]);
+
+            if (removeEntryFromHistory) {
+                await historyRepo.removeEntry(entry.id);
+                await loadHistory();
             }
 
             setHistoryError(null);
         } finally {
             setBusyEntryId(null);
+            setDeletingEntryId(null);
         }
+    }, [loadHistory]);
+
+    const refreshFileAvailability = useCallback(async (entries: DownloadHistoryEntry[]) => {
+        const completedEntriesWithOutput = entries.filter((entry) => entry.status === 'completed' && Boolean(entry.outputPath));
+        if (completedEntriesWithOutput.length === 0) {
+            setUnavailableFileEntryIds([]);
+            return;
+        }
+
+        const availabilityChecks = await Promise.all(
+            completedEntriesWithOutput.map(async (entry) => {
+                const exists = await clipDownloader.fileExists(entry.outputPath as string);
+                return {
+                    id: entry.id,
+                    exists,
+                };
+            }),
+        );
+
+        setUnavailableFileEntryIds(availabilityChecks.filter((check) => !check.exists).map((check) => check.id));
     }, []);
+
+    useEffect(() => {
+        if (!historyPage) {
+            setUnavailableFileEntryIds([]);
+            return;
+        }
+
+        void refreshFileAvailability(historyPage.entries);
+    }, [historyPage, refreshFileAvailability]);
 
     const handleRetry = useCallback(async (entry: DownloadHistoryEntry) => {
         setBusyEntryId(entry.id);
@@ -697,6 +741,8 @@ export default function App() {
                         onClear={handleClear}
                         onConfirmClear={handleClear}
                         busyEntryId={busyEntryId}
+                        deletingEntryId={deletingEntryId}
+                        unavailableFileEntryIds={unavailableFileEntryIds}
                     />
                 </Box>
 
