@@ -74,6 +74,8 @@ export function DownloadHistoryList({
     unavailableFileEntryIds: string[];
 }) {
     const [confirmOpen, setConfirmOpen] = useState(false);
+    const [removeConfirmEntry, setRemoveConfirmEntry] = useState<DownloadHistoryEntry | null>(null);
+    const [removeConfirmLoading, setRemoveConfirmLoading] = useState(false);
     const [deleteConfirmEntry, setDeleteConfirmEntry] = useState<DownloadHistoryEntry | null>(null);
     const [deleteAlsoRemoveEntry, setDeleteAlsoRemoveEntry] = useState(false);
     const [deleteConfirmLoading, setDeleteConfirmLoading] = useState(false);
@@ -87,6 +89,22 @@ export function DownloadHistoryList({
         setDeleteConfirmEntry(entry);
         setDeleteAlsoRemoveEntry(false);
     }, []);
+
+    const handleOpenRemoveConfirm = useCallback((entry: DownloadHistoryEntry) => {
+        setRemoveConfirmEntry(entry);
+    }, []);
+
+    const handleConfirmRemove = useCallback(async () => {
+        if (!removeConfirmEntry) return;
+
+        setRemoveConfirmLoading(true);
+        try {
+            await Promise.resolve(onRemove(removeConfirmEntry));
+            setRemoveConfirmEntry(null);
+        } finally {
+            setRemoveConfirmLoading(false);
+        }
+    }, [onRemove, removeConfirmEntry]);
 
     const handleConfirmDelete = useCallback(async () => {
         if (!deleteConfirmEntry) return;
@@ -217,6 +235,66 @@ export function DownloadHistoryList({
                         </Dialog.Content>
                     </Dialog.Positioner>
                 </Dialog.Root>
+
+                <Dialog.Root
+                    open={Boolean(removeConfirmEntry)}
+                    onOpenChange={(e) => {
+                        if (!e.open && !removeConfirmLoading) {
+                            setRemoveConfirmEntry(null);
+                        }
+                    }}
+                    modal={true}
+                >
+                    <Dialog.Backdrop />
+                    <Dialog.Positioner>
+                        <Dialog.Content backgroundColor={'blackAlpha.900'}>
+                            <Dialog.Header>
+                                <Dialog.Title>Remove History Entry</Dialog.Title>
+                            </Dialog.Header>
+                            <Dialog.Body display="flex" flexDirection="column" gap="3">
+                                <Text>
+                                    Are you sure you want to remove this entry from download history?
+                                </Text>
+                                {removeConfirmEntry?.fileName && (
+                                    <Text fontSize="sm" color="whiteAlpha.700" wordBreak="break-all">
+                                        {truncate(removeConfirmEntry.fileName, 120)}
+                                    </Text>
+                                )}
+                                <Text color="whiteAlpha.600" fontSize="sm">
+                                    This only removes the record from the list. It does not delete the file.
+                                </Text>
+                            </Dialog.Body>
+                            <Dialog.Footer>
+                                <Dialog.ActionTrigger asChild>
+                                    <Button
+                                        variant="outline"
+                                        bg="whiteAlpha.100"
+                                        _hover={{ backgroundColor: 'whiteAlpha.200' }}
+                                        disabled={removeConfirmLoading}
+                                    >
+                                        Cancel
+                                    </Button>
+                                </Dialog.ActionTrigger>
+                                <Button
+                                    bg="red.500"
+                                    _hover={{ backgroundColor: 'red.600' }}
+                                    onClick={() => void handleConfirmRemove()}
+                                    disabled={removeConfirmLoading}
+                                    minW="140px"
+                                >
+                                    {removeConfirmLoading ? (
+                                        <HStack gap="2">
+                                            <CustomSpinner size="xs" />
+                                            <Text>Removing…</Text>
+                                        </HStack>
+                                    ) : (
+                                        'Remove entry'
+                                    )}
+                                </Button>
+                            </Dialog.Footer>
+                        </Dialog.Content>
+                    </Dialog.Positioner>
+                </Dialog.Root>
             </HStack>
 
             {error && (
@@ -313,7 +391,7 @@ export function DownloadHistoryList({
                                         bg="whiteAlpha.100"
                                         border="none"
                                         _hover={{ backgroundColor: 'whiteAlpha.200' }}
-                                        onClick={() => onRemove(entry)}
+                                        onClick={() => handleOpenRemoveConfirm(entry)}
                                         disabled={busy}
                                     >
                                         Remove from history

@@ -449,7 +449,7 @@ export default function App() {
                                 <Input
                                     type="text"
                                     id="file-naming-template"
-                                    placeholder="(%(upload_date>%Y-%m-%d)s) %(title) {start_ms}-{end_ms} [%(id)s]"
+                                    placeholder="(%(upload_date>%Y-%m-%d)s)_%(title).180B_%(epoch)s_[%(id)s]"
                                     variant="subtle"
                                     size="md"
                                     border="1px whiteAlpha.100 solid"

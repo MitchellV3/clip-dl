@@ -533,8 +533,8 @@ def _build_temp_output_template(request: dict[str, Any]) -> str:
     # yt-dlp writes into a temporary clip first. We then remux that file with a
     # second ffmpeg pass so timestamp/keyframe oddities from the initial section
     # extraction do not leak into the final file the user keeps.
-    return f'(%(upload_date>%Y-%m-%d)s) %(title).180B {label_token} {start_ms}-{end_ms} [%(id)s].clip-dl-temp.%(ext)s'
-
+    #return f'(%(upload_date>%Y-%m-%d)s) %(title).180B {label_token} {start_ms}-{end_ms} [%(id)s].clip-dl-temp.%(ext)s'
+    return f'(%(upload_date>%Y-%m-%d)s)_%(title).180B_%(epoch)s_[%(id)s].clip-dl-temp.%(ext)s'
 
 def _build_full_video_output_template(request: dict[str, Any]) -> str:
     user_template = request.get('fileNamingTemplate')
@@ -544,7 +544,7 @@ def _build_full_video_output_template(request: dict[str, Any]) -> str:
         return user_template
 
     label_token = _sanitize_file_token(request['label']).lower()
-    return f'(%(upload_date>%Y-%m-%d)s) %(title).180B {label_token} [%(id)s].%(ext)s'
+    return f'(%(upload_date>%Y-%m-%d)s)_%(title).180B_%(epoch)s_[%(id)s].%(ext)s'
 
 SOURCE_DOMAIN_MAP: dict[str, str] = {
     'youtube.com': 'YouTube',
