@@ -45,6 +45,10 @@ export const enableScreenshotButtonSetting = storage.defineItem('local:enableScr
     fallback: true,
 });
 
+export const livestreamModeSetting = storage.defineItem('local:livestreamMode', {
+    fallback: false,
+});
+
 // Getter functions
 export async function getPlaySfxEnabled(): Promise<boolean> {
     return await playSfxEnabledSetting.getValue();
@@ -206,6 +210,21 @@ export async function setEnableScreenshotButton(enabled: boolean): Promise<void>
 
 export function watchEnableScreenshotButton(callback: (value: boolean) => void) {
     return enableScreenshotButtonSetting.watch((newValue) => {
+        callback(newValue);
+    });
+}
+
+// Livestream mode setting
+export async function getLiveStreamMode(): Promise<boolean> {
+    return await livestreamModeSetting.getValue();
+}
+
+export async function setLiveStreamMode(enabled: boolean): Promise<void> {
+    await livestreamModeSetting.setValue(enabled);
+}
+
+export function watchLiveStreamMode(callback: (value: boolean) => void) {
+    return livestreamModeSetting.watch((newValue) => {
         callback(newValue);
     });
 }

@@ -122,9 +122,15 @@ function createHistoryEntryFromResult(
     };
 
     if (request.type === 'download-clip') {
-        baseEntry.startTimeSeconds = request.startTimeSeconds;
-        baseEntry.endTimeSeconds = request.endTimeSeconds;
-        baseEntry.durationSeconds = Number((request.endTimeSeconds - request.startTimeSeconds).toFixed(3));
+        // Handle both regular clips (with startTimeSeconds/endTimeSeconds) and livestream clips
+        if (request.startTimeSeconds !== undefined && request.endTimeSeconds !== undefined) {
+            baseEntry.startTimeSeconds = request.startTimeSeconds;
+            baseEntry.endTimeSeconds = request.endTimeSeconds;
+            baseEntry.durationSeconds = Number((request.endTimeSeconds - request.startTimeSeconds).toFixed(3));
+        } else if (request.pastDurationSeconds !== undefined) {
+            // For livestream mode, we don't have start/end times, but we have the past duration
+            baseEntry.durationSeconds = request.pastDurationSeconds;
+        }
     }
 
     if (result.ok) {

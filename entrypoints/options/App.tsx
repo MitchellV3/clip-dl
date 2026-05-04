@@ -7,7 +7,7 @@ import {
     type DownloadHistoryPage,
     type DownloadHistoryStatus,
 } from '@/lib/repos/download-history-repo';
-import { getPlaySfxEnabled, setPlaySfxEnabled, getShowLiveProcessLog, setShowLiveProcessLog, watchPlaySfxEnabled, watchShowLiveProcessLog, getOrganizeByDate, setOrganizeByDate, getOrganizeBySource, setOrganizeBySource, watchOrganizeByDate, watchOrganizeBySource, getOrganizeByUploader, setOrganizeByUploader, watchOrganizeByUploader, getDownloadDirectory, setDownloadDirectory, watchDownloadDirectory, getDownloader, setDownloader, watchDownloader, getDownloadFileFormat, setDownloadFileFormat, watchDownloadFileFormat, getFileNamingTemplate, setFileNamingTemplate, watchFileNamingTemplate, getEnableScreenshotButton, setEnableScreenshotButton, watchEnableScreenshotButton, getCookiesFile, setCookiesFile, watchCookiesFile } from '@/lib/repos/settings-repo';
+import { getPlaySfxEnabled, setPlaySfxEnabled, getShowLiveProcessLog, setShowLiveProcessLog, watchPlaySfxEnabled, watchShowLiveProcessLog, getOrganizeByDate, setOrganizeByDate, getOrganizeBySource, setOrganizeBySource, watchOrganizeByDate, watchOrganizeBySource, getOrganizeByUploader, setOrganizeByUploader, watchOrganizeByUploader, getDownloadDirectory, setDownloadDirectory, watchDownloadDirectory, getDownloader, setDownloader, watchDownloader, getDownloadFileFormat, setDownloadFileFormat, watchDownloadFileFormat, getFileNamingTemplate, setFileNamingTemplate, watchFileNamingTemplate, getEnableScreenshotButton, setEnableScreenshotButton, watchEnableScreenshotButton, getCookiesFile, setCookiesFile, watchCookiesFile, getLiveStreamMode, setLiveStreamMode, watchLiveStreamMode } from '@/lib/repos/settings-repo';
 import { createProxyService } from '@webext-core/proxy-service';
 import { Box, Button, CheckboxCard, CheckboxGroup, Field, Grid, Heading, HStack, Input, Text, VStack } from '@chakra-ui/react';
 import type { ChangeEvent } from 'react';
@@ -40,6 +40,7 @@ export default function App() {
     const [templateSelection, setTemplateSelectionState] = useState('');
     const [enableScreenshotButton, setEnableScreenshotButtonState] = useState(true);
     const [cookiesFile, setCookiesFileState] = useState('');
+    const [livestreamMode, setLiveStreamModeState] = useState(false);
 
     const checkboxItems = [
         { value: 'date', title: 'Date', description: 'Organize clips by date (Year -> Month)' },
@@ -185,6 +186,8 @@ export default function App() {
             setCookiesFileState(cookiesPath);
             const screenshotEnabled = await getEnableScreenshotButton();
             setEnableScreenshotButtonState(screenshotEnabled);
+            const livestreamed = await getLiveStreamMode();
+            setLiveStreamModeState(livestreamed);
             setSelectedOrganize([
                 orgDate ? 'date' : null,
                 orgSource ? 'source' : null,
@@ -229,6 +232,9 @@ export default function App() {
         });
         watchEnableScreenshotButton((value) => {
             setEnableScreenshotButtonState(value);
+        });
+        watchLiveStreamMode((value) => {
+            setLiveStreamModeState(value);
         });
     }, []);
 
@@ -350,6 +356,11 @@ export default function App() {
     const handleShowLiveProcessLogChange = useCallback(async (enabled: boolean) => {
         setShowLiveProcessLogState(enabled);
         await setShowLiveProcessLog(enabled);
+    }, []);
+
+    const handleLiveStreamModeChange = useCallback(async (enabled: boolean) => {
+        setLiveStreamModeState(enabled);
+        await setLiveStreamMode(enabled);
     }, []);
 
     const handleOrganizeChange = useCallback(async (values: string[]) => {
@@ -593,7 +604,7 @@ export default function App() {
 
                 <Box className="setting-group">
                     <Heading>Download Settings</Heading>
-                    <HStack height={"8rem"}>
+                    <HStack height={"auto"}>
                         <CheckboxCard.Root value={"playSfx"} bg="whiteAlpha.100" checked={playSfxEnabled} onCheckedChange={(state) => void handlePlaySfxChange(typeof state.checked === 'boolean' ? state.checked : false)} height={"100%"}>
                             <CheckboxCard.HiddenInput />
                             <CheckboxCard.Control>
@@ -610,6 +621,16 @@ export default function App() {
                                 <CheckboxCard.Content>
                                     <CheckboxCard.Label>Show live process log</CheckboxCard.Label>
                                     <CheckboxCard.Description>When a clip is downloading the live log window will open automatically allowing you to see the download progress.</CheckboxCard.Description>
+                                </CheckboxCard.Content>
+                                <CheckboxCard.Indicator />
+                            </CheckboxCard.Control>
+                        </CheckboxCard.Root>
+                        <CheckboxCard.Root value={"livestreamMode"} bg="whiteAlpha.100" checked={livestreamMode} onCheckedChange={(state) => void handleLiveStreamModeChange(typeof state.checked === 'boolean' ? state.checked : false)} height={"100%"}>
+                            <CheckboxCard.HiddenInput />
+                            <CheckboxCard.Control>
+                                <CheckboxCard.Content>
+                                    <CheckboxCard.Label>Livestream mode (default)</CheckboxCard.Label>
+                                    <CheckboxCard.Description>Enable livestream mode by default when you open the clipper. You can still toggle it on/off in the clipper UI per session.</CheckboxCard.Description>
                                 </CheckboxCard.Content>
                                 <CheckboxCard.Indicator />
                             </CheckboxCard.Control>

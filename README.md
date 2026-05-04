@@ -17,6 +17,7 @@ It uses native messaging to communicate with a Python host script that runs [`yt
 ## Features
 
 - **Clip downloading** — Select start/end times or use preset durations (10s, 30s, 1m, 3m, 5m, 10m)
+- **Livestream rewind mode** — Download past segments from YouTube livestreams (10s ago, 30s ago, etc.) using `ypb` when available
 - **Full video downloads** — Download entire videos with a single click
 - **Audio-only mode** — Extract audio as MP3
 - **Quality selection** — Choose from available video formats/resolutions
@@ -43,6 +44,10 @@ Before installing, ensure these tools are installed and available on your `PATH`
     - [**Mutagen**](https://mutagen.readthedocs.io/en/latest/)
     - [**AtomicParsley**](https://github.com/wez/atomicparsley)
 - [**ffmpeg/ffprobe**](https://www.ffmpeg.org/) — (for remuxing clips). Ensure you have the binary from the official site, not the python package.
+
+**Optional (for livestream rewind support):**
+
+- [**ypb**](https://github.com/yt-dlp/ypb) — Enables downloading past segments from YouTube livestreams using `ypb download --interval` syntax. Install from: [https://github.com/yt-dlp/ypb#installation](https://github.com/yt-dlp/ypb#installation). When livestream mode is enabled in the extension and ypb is not available, a helpful error message will direct you to install it.
 
 Verify installation:
 
@@ -136,6 +141,24 @@ Default downloads directory: C:\Users\YourName\Downloads
 2. Click **Set End Time** at the desired end point
 3. Click **Download Clip**
 
+### Livestream Mode (YouTube Live)
+
+For YouTube livestreams, the extension includes a **Livestream Mode** that allows you to download past segments of the broadcast:
+
+1. **Enable Livestream Mode** — Toggle "Livestream Mode" in the clipper UI or set it as default in Options
+2. **Click a duration preset** — Use 10s, 30s, 1m, 3m, 5m, 10m buttons to download that much of the **past** (e.g., 30s = last 30 seconds)
+3. The extension will use [`ypb`](https://github.com/yt-dlp/ypb) to fetch the past segment if available
+
+**Requirements:**
+
+- YouTube livestream (does not work on archived VODs)
+- `ypb` installed and on `PATH` (optional; missing ypb will show an install link)
+- Custom time selection (Set Start Time / Set End Time) is not supported in livestream mode — use preset durations instead
+
+**Full Video:**
+
+- Full video downloads work on both live streams and VODs and do not require `ypb`
+
 ### Options
 
 Click the extension icon → **Options** to configure:
@@ -146,6 +169,7 @@ Click the extension icon → **Options** to configure:
 - **Organization** — Organize by date/source/uploader or any combination of the three
 - **Live process log** — Show/hide the progress console window
 - **Sound effects** — Enable/disable audio feedback
+- **Livestream mode (default)** — Enable livestream mode by default (can still toggle per session in the clipper UI)
 - **Show screenshot button** — Toggle the screenshot capture feature in the clipper UI
 - **Download history** — View and manage past downloads
 - **Cookie support** — Export cookies from Chrome for age-restricted/private videos

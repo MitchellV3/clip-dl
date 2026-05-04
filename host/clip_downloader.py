@@ -227,34 +227,68 @@ def _validate_download_clip_request(message: dict[str, Any]) -> tuple[dict[str, 
     assert audio_only is not None
     assert downloader is not None
 
-    start_time_seconds = message.get('startTimeSeconds')
-    end_time_seconds = message.get('endTimeSeconds')
+    # Check if this is a livestream rewind request
+    is_livestream = message.get('livestream', False)
+    
+    if is_livestream:
+        # Livestream mode: validate pastDurationSeconds instead of start/end times
+        past_duration_seconds = message.get('pastDurationSeconds')
+        
+        if not isinstance(past_duration_seconds, (int, float)):
+            return None, _error_response('bad-request', 'Livestream mode requires a numeric pastDurationSeconds.')
+        
+        past_duration_seconds = float(past_duration_seconds)
+        
+        if past_duration_seconds <= 0:
+            return None, _error_response('bad-request', 'pastDurationSeconds must be greater than 0.')
+        
+        # Reasonable upper bound: 24 hours
+        if past_duration_seconds > 86400:
+            return None, _error_response('bad-request', 'pastDurationSeconds cannot exceed 24 hours (86400 seconds).')
+        
+        validated_request: dict[str, Any] = {
+            'type': 'download-clip',
+            'url': url,
+            'label': label,
+            'livestream': True,
+            'pastDurationSeconds': round(past_duration_seconds, 3),
+            'audioOnly': bool(audio_only),
+            'showLiveProcessLog': bool(message.get('showLiveProcessLog', True)),
+            'organizeByDate': bool(message.get('organizeByDate', False)),
+            'organizeBySource': bool(message.get('organizeBySource', False)),
+            'organizeByUploader': bool(message.get('organizeByUploader', False)),
+            'downloader': downloader,
+        }
+    else:
+        # Regular clip mode: validate start/end times
+        start_time_seconds = message.get('startTimeSeconds')
+        end_time_seconds = message.get('endTimeSeconds')
 
-    if not isinstance(start_time_seconds, (int, float)) or not isinstance(end_time_seconds, (int, float)):
-        return None, _error_response('bad-request', 'Clip start/end times must be numeric.')
+        if not isinstance(start_time_seconds, (int, float)) or not isinstance(end_time_seconds, (int, float)):
+            return None, _error_response('bad-request', 'Clip start/end times must be numeric.')
 
-    start_time_seconds = float(start_time_seconds)
-    end_time_seconds = float(end_time_seconds)
+        start_time_seconds = float(start_time_seconds)
+        end_time_seconds = float(end_time_seconds)
 
-    if start_time_seconds < 0 or end_time_seconds < 0:
-        return None, _error_response('bad-request', 'Clip start/end times cannot be negative.')
+        if start_time_seconds < 0 or end_time_seconds < 0:
+            return None, _error_response('bad-request', 'Clip start/end times cannot be negative.')
 
-    if end_time_seconds <= start_time_seconds:
-        return None, _error_response('bad-request', 'Clip end time must be greater than start time.')
+        if end_time_seconds <= start_time_seconds:
+            return None, _error_response('bad-request', 'Clip end time must be greater than start time.')
 
-    validated_request: dict[str, Any] = {
-        'type': 'download-clip',
-        'url': url,
-        'label': label,
-        'startTimeSeconds': round(start_time_seconds, 3),
-        'endTimeSeconds': round(end_time_seconds, 3),
-        'audioOnly': bool(audio_only),
-        'showLiveProcessLog': bool(message.get('showLiveProcessLog', True)),
-        'organizeByDate': bool(message.get('organizeByDate', False)),
-        'organizeBySource': bool(message.get('organizeBySource', False)),
-        'organizeByUploader': bool(message.get('organizeByUploader', False)),
-        'downloader': downloader,
-    }
+        validated_request: dict[str, Any] = {
+            'type': 'download-clip',
+            'url': url,
+            'label': label,
+            'startTimeSeconds': round(start_time_seconds, 3),
+            'endTimeSeconds': round(end_time_seconds, 3),
+            'audioOnly': bool(audio_only),
+            'showLiveProcessLog': bool(message.get('showLiveProcessLog', True)),
+            'organizeByDate': bool(message.get('organizeByDate', False)),
+            'organizeBySource': bool(message.get('organizeBySource', False)),
+            'organizeByUploader': bool(message.get('organizeByUploader', False)),
+            'downloader': downloader,
+        }
 
     # Preserve optional fields if provided
     format_selector = message.get('formatSelector')
@@ -454,6 +488,24 @@ def _require_tool(tool_name: str) -> tuple[str | None, dict[str, Any] | None]:
     )
 
 
+def _check_ypb_available() -> tuple[bool, str | None]:
+    """
+    Check if ypb is available on PATH.
+    Returns (available: bool, error_message: str | None)
+    """
+    tool_path = shutil.which('ypb')
+    if tool_path:
+        logger.debug(f'ypb found at {tool_path}')
+        return True, None
+    else:
+        logger.warning('ypb not found on PATH')
+        return False, (
+            'ypb is not installed or not on PATH. '
+            'To download livestream clips, install ypb: https://github.com/yt-dlp/ypb. '
+            'Note: ypb is optional and only required for livestream rewind downloads.'
+        )
+
+
 def _sanitize_file_token(value: str) -> str:
     return ''.join(character if character.isalnum() else '-' for character in value).strip('-') or 'clip'
 
@@ -517,9 +569,25 @@ def _check_disk_space(downloads_dir: Path, estimated_size: int | None) -> dict[s
     return None
 
 def _build_temp_output_template(request: dict[str, Any]) -> str:
+    # For regular clips, we have start/end times; for livestream, we use the label only
+    is_livestream = request.get('livestream', False)
+    
+    label_token = _sanitize_file_token(request['label']).lower()
+
+    # If livestream, don't try to access startTimeSeconds/endTimeSeconds
+    if is_livestream:
+        user_template = request.get('fileNamingTemplate')
+        if user_template:
+            if '%(ext)s' not in user_template:
+                user_template = user_template + '.%(ext)s'
+            user_template = user_template.replace('.%(ext)s', '.clip-dl-temp.%(ext)s')
+            return user_template
+        # For livestream, use a simpler template without time info
+        return f'(%(upload_date>%Y-%m-%d)s)_%(title).180B_%(epoch)s_[%(id)s].clip-dl-temp.%(ext)s'
+    
+    # Regular clip: has startTimeSeconds/endTimeSeconds
     start_ms = int(round(request['startTimeSeconds'] * 1000))
     end_ms = int(round(request['endTimeSeconds'] * 1000))
-    label_token = _sanitize_file_token(request['label']).lower()
 
     user_template = request.get('fileNamingTemplate')
     if user_template:
@@ -637,13 +705,24 @@ def _build_download_command(request: dict[str, Any], downloads_path: Path) -> li
         command.extend(['--cookies', cookies_file])
 
     if request['type'] == 'download-clip':
+        # For livestream requests, this function should not be called
+        # _build_ypb_command should be used instead
+        if request.get('livestream', False):
+            raise ValueError('_build_download_command called with a livestream request. Use _build_ypb_command instead.')
+        
+        # Ensure start/end times are present for regular clips
+        start_time = request.get('startTimeSeconds')
+        end_time = request.get('endTimeSeconds')
+        if start_time is None or end_time is None:
+            raise ValueError('Regular clip requests must include startTimeSeconds and endTimeSeconds')
+        
         # yt-dlp still owns the YouTube extraction/download phase. We keep the
         # section download here so only the requested range is fetched, but we do
         # not ask yt-dlp to force keyframes because that triggers an expensive
         # re-encode path.
         command.extend([
             '--download-sections',
-            f'*{_format_yt_dlp_seconds(request["startTimeSeconds"])}-{_format_yt_dlp_seconds(request["endTimeSeconds"])}',
+            f'*{_format_yt_dlp_seconds(start_time)}-{_format_yt_dlp_seconds(end_time)}',
             '--output', _build_temp_output_template(request),
         ])
     else:
@@ -667,6 +746,86 @@ def _build_download_command(request: dict[str, Any], downloads_path: Path) -> li
         command.extend(['-f', format_selector])
 
     command.append(request['url'])
+    return command
+
+
+def _build_ypb_command(request: dict[str, Any], downloads_path: Path) -> list[str]:
+    """
+    Build a ypb download command for livestream rewind clips.
+    
+    ypb syntax: ypb download --interval <start>/<end> [options] -- [yt-dlp args]
+    
+    For livestream rewinds, we use: ypb download --interval <duration>s/now URL -- [yt-dlp args]
+    where <duration> is pastDurationSeconds (e.g., 30s for 30 seconds of the past).
+    """
+    audio_only = request.get('audioOnly', False)
+    downloader = request.get('downloader', 'native')
+    cookies_file = request.get('cookiesFile', '')
+    past_duration_seconds = request.get('pastDurationSeconds')
+    url = request.get('url', '')
+    
+    if past_duration_seconds is None:
+        raise ValueError('pastDurationSeconds is required for ypb downloads')
+    
+    if not url:
+        raise ValueError('url is required for ypb downloads')
+    
+    effective_path = _resolve_effective_path(downloads_path, request)
+    
+    # Log the URL being passed to ypb for debugging
+    logger.info(f'Building ypb command with URL: {url}')
+    logger.info(f'Livestream interval: {int(past_duration_seconds)}s/now')
+    
+    # Build the ypb command
+    command = [
+        'ypb',
+        'download',
+        '--interval', f'{int(past_duration_seconds)}s/now',
+        url,
+    ]
+    
+    # Add the -- separator to forward arguments to yt-dlp
+    command.append('--')
+    
+    # Add yt-dlp arguments after the -- separator
+    yt_dlp_args = [
+        '--no-warnings',
+        '--verbose',
+        '--windows-filenames',
+        '--restrict-filenames',
+        '--progress',
+        '--progress-template', 'download:[download] %(progress._percent_str)s of %(progress._total_bytes_str)s at %(progress._speed_str)s ETA %(progress._eta_str)s',
+        '--paths', f'home:{effective_path}',
+        '--print', 'after_move:%(filepath)s',
+        '--embed-metadata',
+        '--embed-thumbnail',
+    ]
+    
+    if isinstance(cookies_file, str) and cookies_file.strip():
+        yt_dlp_args.extend(['--cookies', cookies_file])
+    
+    # For ypb/yt-dlp integration with clips, we use the temp output template
+    # (same as regular clips so remux post-processing works)
+    yt_dlp_args.extend([
+        '--output', _build_temp_output_template(request),
+    ])
+    
+    if audio_only:
+        yt_dlp_args.extend(['-x', '--audio-format', 'mp3'])
+    else:
+        file_format = request.get('fileFormat', 'mkv')
+        yt_dlp_args.extend(['-t', file_format])
+    
+    # Add format selector if provided and not audio-only
+    format_selector = request.get('formatSelector')
+    if format_selector and not audio_only:
+        yt_dlp_args.extend(['-f', format_selector])
+    
+    # Add downloader if not native
+    if downloader != 'native':
+        yt_dlp_args.extend(['--downloader', downloader])
+    
+    command.extend(yt_dlp_args)
     return command
 
 
@@ -1232,6 +1391,14 @@ def main() -> int:
             _write_native_message(missing_tool_error)
             return 0
 
+    # For livestream clips, check if ypb is available
+    if request.get('livestream', False) and request['type'] == 'download-clip':
+        ypb_available, ypb_error = _check_ypb_available()
+        if not ypb_available:
+            logger.error(f'ypb not available: {ypb_error}')
+            _write_native_message(_error_response('ypb-missing', ypb_error or 'ypb is not installed.'))
+            return 0
+
     estimated_size = _get_estimated_file_size(request['url'])
     disk_space_error = _check_disk_space(downloads_path, estimated_size)
     if disk_space_error:
@@ -1240,7 +1407,10 @@ def main() -> int:
         return 0
 
     if request['type'] == 'download-clip':
-        logger.info(f'Processing download-clip request: url={request["url"]}, label={request["label"]}, start={request["startTimeSeconds"]}, end={request["endTimeSeconds"]}')
+        if request.get('livestream', False):
+            logger.info(f'Processing livestream download-clip request: url={request["url"]}, label={request["label"]}, pastDuration={request["pastDurationSeconds"]}s')
+        else:
+            logger.info(f'Processing download-clip request: url={request["url"]}, label={request["label"]}, start={request["startTimeSeconds"]}, end={request["endTimeSeconds"]}')
     else:
         logger.info(f'Processing download-full-video request: url={request["url"]}, label={request["label"]}')
 
@@ -1252,7 +1422,18 @@ def main() -> int:
 
     try:
         with _single_download_lock():
-            download_command = _build_download_command(request, downloads_path)
+            # Branch between ypb (livestream) and regular yt-dlp downloads
+            is_livestream = request.get('livestream', False)
+            is_clip = request['type'] == 'download-clip'
+            logger.info(f'Download branching: is_livestream={is_livestream}, is_clip={is_clip}, request_type={request["type"]}')
+            
+            if is_livestream and is_clip:
+                logger.info('Using ypb for livestream rewind download')
+                download_command = _build_ypb_command(request, downloads_path)
+            else:
+                logger.info(f'Using standard yt-dlp for {request["type"]}')
+                download_command = _build_download_command(request, downloads_path)
+            
             show_live = request.get('showLiveProcessLog', True)
             if show_live:
                 logger.debug(f'Executing with visible progress window: {download_command!r}')
@@ -1280,7 +1461,37 @@ def main() -> int:
             logger.error(f'yt-dlp/ffmpeg stdout:\n{stdout}')
         if stderr:
             logger.error(f'yt-dlp/ffmpeg stderr:\n{stderr}')
+        
+        # For livestream downloads, provide more helpful error diagnostics
         error_text = stderr or stdout or f'yt-dlp/ffmpeg exited with code {completed_process.returncode}.'
+        is_livestream = request.get('livestream', False)
+        
+        if is_livestream:
+            # Check for common livestream/ypb/yt-dlp issues
+            combined_output = (stderr + '\n' + stdout).lower()
+            
+            if 'challenge' in combined_output or 'ejs' in combined_output or 'deno' in combined_output:
+                logger.error('yt-dlp EJS/Deno challenge solver issue detected')
+                error_text = (
+                    'yt-dlp failed to resolve the YouTube video due to JavaScript challenge solving.\n\n'
+                    'To fix this, try one of the following:\n'
+                    '1. Update yt-dlp: pip install --upgrade yt-dlp\n'
+                    '2. Install remote components: yt-dlp --remote-components ejs:github\n'
+                    '3. Ensure you have Deno installed (https://deno.com)\n\n'
+                    f'Original error: {error_text}'
+                )
+            elif 'time' in combined_output and 'after current moment' in combined_output:
+                logger.error('ypb timestamp resolution issue detected')
+                error_text = (
+                    'ypb failed to resolve the livestream due to a timestamp issue.\n'
+                    'This usually means yt-dlp could not properly retrieve video metadata.\n'
+                    'Ensure:\n'
+                    '1. yt-dlp is up to date: pip install --upgrade yt-dlp\n'
+                    '2. JavaScript challenge solving is working (see above)\n'
+                    '3. You can access the livestream URL directly\n\n'
+                    f'Original error: {error_text}'
+                )
+        
         _write_native_message(_error_response('download-failed', error_text))
         return 0
 
@@ -1292,16 +1503,19 @@ def main() -> int:
 
     logger.info(f'Download completed successfully: {output_path}')
     if request['type'] == 'download-clip':
-        _write_native_message({
+        response: dict[str, Any] = {
             'ok': True,
             'downloadType': 'clip',
             'outputPath': str(output_path),
             'fileName': output_path.name,
-            'clipRange': {
-                'startTimeSeconds': request['startTimeSeconds'],
-                'endTimeSeconds': request['endTimeSeconds'],
-            },
-        })
+        }
+        # Only include clipRange if this is a non-livestream clip (has time bounds)
+        if not request.get('livestream', False):
+            response['clipRange'] = {
+                'startTimeSeconds': request.get('startTimeSeconds'),
+                'endTimeSeconds': request.get('endTimeSeconds'),
+            }
+        _write_native_message(response)
     else:
         _write_native_message({
             'ok': True,

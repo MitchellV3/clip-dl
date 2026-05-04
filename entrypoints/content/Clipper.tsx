@@ -4,7 +4,7 @@ import { createProxyService } from '@webext-core/proxy-service'
 import { toaster } from '@/components/ui/toaster'
 import { CLIP_DOWNLOADER_KEY } from '@/lib/services/proxy-service-keys'
 import { playSfx } from '@/lib/services/sfx'
-import { getPlaySfxEnabled, watchPlaySfxEnabled, getShowLiveProcessLog, watchShowLiveProcessLog, getOrganizeByDate, watchOrganizeByDate, getOrganizeBySource, watchOrganizeBySource, getOrganizeByUploader, watchOrganizeByUploader, getDownloadFileFormat, getFileNamingTemplate, watchFileNamingTemplate } from '@/lib/repos/settings-repo'
+import { getPlaySfxEnabled, watchPlaySfxEnabled, getShowLiveProcessLog, watchShowLiveProcessLog, getOrganizeByDate, watchOrganizeByDate, getOrganizeBySource, watchOrganizeBySource, getOrganizeByUploader, watchOrganizeByUploader, getDownloadFileFormat, getFileNamingTemplate, watchFileNamingTemplate, getLiveStreamMode, setLiveStreamMode, watchLiveStreamMode } from '@/lib/repos/settings-repo'
 import type { ClipDownloadRequest, ClipDownloadResult, ClipRangeDownloadRequest, FullVideoDownloadRequest } from '@/lib/repos/native-clip-downloader-repo'
 import './style.css'
 
@@ -269,6 +269,70 @@ function AudioOnlyToggle() {
       >
         <Text>
           Audio Only
+        </Text>
+        <Box
+          width={'32px'}
+          height={'16px'}
+          backgroundColor={active ? 'rgba(74, 222, 128, 0.5)' : 'rgba(255, 255, 255, 0.15)'}
+          borderRadius={'9px'}
+          position={'relative'}
+          transition={'all 0.2s ease'}
+          border={'1px solid rgba(255, 255, 255, 0.2)'}
+        >
+          <Box
+            width={'14px'}
+            height={'14px'}
+            backgroundColor={active ? '#4ade80' : '#e2e2e2'}
+            borderRadius={'50%'}
+            position={'absolute'}
+            top={'1px'}
+            left={active ? '15px' : '1px'}
+            transition={'all 0.2s ease'}
+            boxShadow={'xl'}
+          />
+        </Box>
+      </Button>
+    </Box>
+  )
+}
+
+// Livestream mode toggle sub-component
+function LivestreamModeToggle({ active, onChange, isAutoDetected }: { active: boolean; onChange: (value: boolean) => void; isAutoDetected?: boolean }) {
+  function handleClick() {
+    const newValue = !active
+    onChange(newValue)
+  }
+
+  const title = isAutoDetected 
+    ? "Livestream mode auto-detected (URL contains /live/). Downloads past duration using ypb."
+    : "Enable livestream mode for YouTube live streams. Downloads past duration using ypb."
+
+  return (
+    <Box
+      borderBottom={'1px solid rgba(255,255,255,0.15)'}
+      padding={'4px 2px 4px'}
+      backgroundColor={isAutoDetected && active ? 'rgba(74, 222, 128, 0.1)' : undefined}
+      transition={'all 0.2s ease'}
+    >
+      <Button
+        onClick={handleClick}
+        display={'flex'}
+        alignItems={'center'}
+        justifyContent={'space-between'}
+        width={'100%'}
+        backgroundColor={'transparent'}
+        color={'#e2e2e2'}
+        border={'none'}
+        cursor={'pointer'}
+        fontSize={'12px'}
+        textAlign={'left'}
+        transition={'all 0.2s ease'}
+        borderRadius={'4px'}
+        _hover={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+        title={title}
+      >
+        <Text>
+          Livestream Mode {isAutoDetected && active ? '✓' : ''}
         </Text>
         <Box
           width={'32px'}
@@ -643,6 +707,8 @@ export default function Clipper() {
   const [organizeByUploaderEnabled, setOrganizeByUploaderEnabled] = useState(false)
   const [fileFormat, setFileFormat] = useState('mkv')
   const [fileNamingTemplate, setFileNamingTemplate] = useState('')
+  const [livestreamModeEnabled, setLiveStreamModeEnabled] = useState(false)
+  const [isLivestreamUrlAutoDetected, setIsLivestreamUrlAutoDetected] = useState(false)
 
   // Derived state for button disabling
   const isQueueFull = downloadQueue.length >= MAX_QUEUE_SIZE
@@ -778,6 +844,35 @@ export default function Clipper() {
     })
   }, [])
 
+  // Load livestream mode setting from storage on mount
+  // Auto-enable livestream mode if the current URL is a YouTube livestream
+  useEffect(() => {
+    const loadLiveStreamModeSetting = async () => {
+      const currentUrl = window.location.href
+      const isLivestreamUrl = currentUrl.includes('/live/')
+      
+      const enabled = await getLiveStreamMode()
+      const shouldEnable = enabled || isLivestreamUrl
+      
+      setLiveStreamModeEnabled(shouldEnable)
+      setIsLivestreamUrlAutoDetected(isLivestreamUrl)
+      
+      // If we auto-detected a livestream but it wasn't previously enabled, save it
+      if (isLivestreamUrl && !enabled) {
+        await setLiveStreamMode(true)
+      }
+    }
+    void loadLiveStreamModeSetting()
+
+    const unsubscribe = watchLiveStreamMode((value) => {
+      setLiveStreamModeEnabled(value)
+    })
+
+    return () => {
+      if (unsubscribe) unsubscribe()
+    }
+  }, [])
+
   useEffect(() => {
     if (!isOpen) {
       clearTimelinePreviewOverlay()
@@ -881,6 +976,11 @@ export default function Clipper() {
     }
   }, [])
 
+  const handleLiveStreamModeToggle = useCallback(async (enabled: boolean) => {
+    setLiveStreamModeEnabled(enabled)
+    await setLiveStreamMode(enabled)
+  }, [])
+
   const openFileLocation = useCallback(async (result: Extract<ClipDownloadResult, { ok: true }>) => {
     if (!result.outputPath) {
       return
@@ -955,8 +1055,10 @@ export default function Clipper() {
       request: request.type === 'download-clip'
         ? {
           ...request,
-          startTimeSeconds: formatSecondsForYtDlp(request.startTimeSeconds),
-          endTimeSeconds: formatSecondsForYtDlp(request.endTimeSeconds),
+          ...(request.startTimeSeconds !== undefined && request.endTimeSeconds !== undefined && {
+            startTimeSeconds: formatSecondsForYtDlp(request.startTimeSeconds),
+            endTimeSeconds: formatSecondsForYtDlp(request.endTimeSeconds),
+          }),
         }
         : request,
     })
@@ -988,7 +1090,11 @@ export default function Clipper() {
         : 'Downloading clip'
       const loadingDescription = pendingJob.request.type === 'download-full-video'
         ? `Saving the full ${pendingJob.request.audioOnly ? 'audio track' : 'video'} to Downloads. A progress window was opened on the desktop.`
-        : `Saving clip from ${formatTimeDisplay(pendingJob.request.startTimeSeconds)} to ${formatTimeDisplay(pendingJob.request.endTimeSeconds)}. A progress window was opened on the desktop.`
+        : pendingJob.request.livestream
+          ? `Saving past ${pendingJob.request.pastDurationSeconds}s to Downloads. A progress window was opened on the desktop.`
+          : (pendingJob.request.startTimeSeconds !== undefined && pendingJob.request.endTimeSeconds !== undefined)
+            ? `Saving clip from ${formatTimeDisplay(pendingJob.request.startTimeSeconds)} to ${formatTimeDisplay(pendingJob.request.endTimeSeconds)}. A progress window was opened on the desktop.`
+            : `Saving clip to Downloads. A progress window was opened on the desktop.`
 
       // Dismiss queued toast and show loading toast
       toaster.dismiss(pendingJob.toastId)
@@ -1130,8 +1236,6 @@ export default function Clipper() {
     const request: ClipRangeDownloadRequest = {
       type: 'download-clip',
       url: window.location.href,
-      startTimeSeconds,
-      endTimeSeconds,
       label,
       audioOnly: clipState.audioOnly,
       fileFormat,
@@ -1140,13 +1244,23 @@ export default function Clipper() {
       organizeBySource: organizeBySourceEnabled,
       organizeByUploader: organizeByUploaderEnabled,
     }
-    console.log('[clip-dl] Download request:', { organizeByDate: organizeByDateEnabled, organizeBySource: organizeBySourceEnabled, organizeByUploader: organizeByUploaderEnabled })
+
+    // Branch between livestream and regular clip download
+    if (livestreamModeEnabled) {
+      request.livestream = true
+      request.pastDurationSeconds = seconds
+    } else {
+      request.startTimeSeconds = startTimeSeconds
+      request.endTimeSeconds = endTimeSeconds
+    }
+
+    console.log('[clip-dl] Download request:', { organizeByDate: organizeByDateEnabled, organizeBySource: organizeBySourceEnabled, organizeByUploader: organizeByUploaderEnabled, livestream: livestreamModeEnabled })
     // Add format selector if available and not audio-only
     if (!clipState.audioOnly && clipState.selectedFormatValue) {
       request.formatSelector = clipState.selectedFormatValue
     }
     enqueueDownload(request)
-  }, [enqueueDownload, sfxEnabled, organizeByDateEnabled, organizeBySourceEnabled, organizeByUploaderEnabled, fileFormat, fileNamingTemplate])
+  }, [enqueueDownload, sfxEnabled, organizeByDateEnabled, organizeBySourceEnabled, organizeByUploaderEnabled, fileFormat, fileNamingTemplate, livestreamModeEnabled])
 
   const handleSetStartTime = useCallback(() => {
     const videoElement = getActiveVideoElement()
@@ -1196,6 +1310,20 @@ export default function Clipper() {
   }, [])
 
   const handleCustomClipDownload = useCallback(() => {
+    // Livestream mode doesn't support custom time selection
+    // Users should use duration presets instead
+    if (livestreamModeEnabled) {
+      toaster.create({
+        type: 'error',
+        title: 'Livestream mode active',
+        description: 'Custom time selection is not supported in livestream mode. Please use the duration presets (10s, 30s, etc.) instead.',
+        duration: 5000,
+        closable: true,
+      })
+      if (sfxEnabled) playSfx('error')
+      return
+    }
+
     const selection = getClipTimeSelection()
     const resolvedRange = resolveSelectedClipRange(selection)
 
@@ -1229,7 +1357,7 @@ export default function Clipper() {
       request.formatSelector = clipState.selectedFormatValue
     }
     enqueueDownload(request)
-  }, [enqueueDownload, organizeByDateEnabled, organizeBySourceEnabled, organizeByUploaderEnabled, fileFormat, fileNamingTemplate])
+  }, [enqueueDownload, organizeByDateEnabled, organizeBySourceEnabled, organizeByUploaderEnabled, fileFormat, fileNamingTemplate, sfxEnabled, livestreamModeEnabled])
 
   useEffect(() => {
     window.clip_getAudioOnly = () => clipState.audioOnly
@@ -1345,6 +1473,7 @@ export default function Clipper() {
           <Popover.Body>
             <Box display={'flex'} flexDirection={'column'} gap={2} width={'full'}>
               <AudioOnlyToggle />
+              <LivestreamModeToggle active={livestreamModeEnabled} onChange={handleLiveStreamModeToggle} isAutoDetected={isLivestreamUrlAutoDetected} />
               <QualitySelector
                 formats={qualityFormats}
                 loading={loadingFormats}
