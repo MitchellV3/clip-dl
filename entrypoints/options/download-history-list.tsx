@@ -45,6 +45,7 @@ export function DownloadHistoryList({
     onPreviousPage,
     onNextPage,
     onShowFile,
+    onDeleteFile,
     onRetry,
     onRemove,
     onClear,
@@ -60,6 +61,7 @@ export function DownloadHistoryList({
     onPreviousPage: () => void;
     onNextPage: () => void;
     onShowFile: (entry: DownloadHistoryEntry) => void;
+    onDeleteFile: (entry: DownloadHistoryEntry) => void;
     onRetry: (entry: DownloadHistoryEntry) => void;
     onRemove: (entry: DownloadHistoryEntry) => void;
     onClear: () => void;
@@ -139,6 +141,7 @@ export function DownloadHistoryList({
 
                 {!loading && entries.map((entry) => {
                     const showFileDisabled = !entry.outputPath;
+                    const canDeleteFile = entry.status === 'completed' && Boolean(entry.outputPath);
                     const busy = busyEntryId === entry.id;
 
                     return (
@@ -182,6 +185,18 @@ export function DownloadHistoryList({
                                     >
                                         Show file
                                     </Button>
+                                    {canDeleteFile && (
+                                        <Button
+                                            size="sm"
+                                            bg="whiteAlpha.100"
+                                            border="none"
+                                            _hover={{ backgroundColor: 'whiteAlpha.200' }}
+                                            onClick={() => onDeleteFile(entry)}
+                                            disabled={busy}
+                                        >
+                                            Delete file
+                                        </Button>
+                                    )}
                                     {entry.status === 'error' && (
                                         <Button
                                             size="sm"

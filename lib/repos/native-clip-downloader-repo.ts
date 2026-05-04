@@ -70,6 +70,11 @@ export interface ShowDownloadedClipInFolderRequest {
     highlightFile?: boolean
 }
 
+export interface DeleteFileRequest {
+    type: 'delete-file'
+    outputPath: string
+}
+
 export interface PickFileRequest {
     type: 'pick-file'
 }
@@ -231,9 +236,29 @@ export function NativeClipDownloaderRepo() {
         }
     }
 
+    const deleteFile = async (outputPath: string): Promise<boolean> => {
+        try {
+            const payload: DeleteFileRequest = {
+                type: 'delete-file',
+                outputPath,
+            }
+
+            const response = await browser.runtime.sendNativeMessage(NATIVE_HOST_NAME, payload) as {
+                ok?: boolean
+                deleted?: boolean
+            }
+
+            return Boolean(response?.ok && response?.deleted)
+        } catch (error) {
+            console.warn('[clip-dl] Delete file error:', error)
+            return false
+        }
+    }
+
     return {
         downloadClip,
         showDownloadedClipInFolder,
+        deleteFile,
         getVideoFormats,
         pickDirectory,
         pickFile,

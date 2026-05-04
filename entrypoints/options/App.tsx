@@ -250,6 +250,23 @@ export default function App() {
         }
     }, []);
 
+    const handleDeleteFile = useCallback(async (entry: DownloadHistoryEntry) => {
+        if (!entry.outputPath || entry.status !== 'completed') return;
+
+        setBusyEntryId(entry.id);
+        try {
+            const deleted = await clipDownloader.deleteFile(entry.outputPath);
+            if (!deleted) {
+                setHistoryError('Failed to delete the downloaded file. It may already be missing or locked by another process.');
+                return;
+            }
+
+            setHistoryError(null);
+        } finally {
+            setBusyEntryId(null);
+        }
+    }, []);
+
     const handleRetry = useCallback(async (entry: DownloadHistoryEntry) => {
         setBusyEntryId(entry.id);
         try {
@@ -674,6 +691,7 @@ export default function App() {
                         onPreviousPage={() => setHistoryPageIndex((current) => Math.max(1, current - 1))}
                         onNextPage={() => setHistoryPageIndex((current) => Math.min(totalPages, current + 1))}
                         onShowFile={handleShowFile}
+                        onDeleteFile={handleDeleteFile}
                         onRetry={handleRetry}
                         onRemove={handleRemove}
                         onClear={handleClear}

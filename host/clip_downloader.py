@@ -354,6 +354,20 @@ def _validate_show_downloaded_clip_in_folder_request(message: dict[str, Any]) ->
     }, None
 
 
+def _validate_delete_file_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    if message.get('type') != 'delete-file':
+        return None, _error_response('bad-request', "Expected request type 'delete-file'.")
+
+    output_path = message.get('outputPath')
+    if not isinstance(output_path, str) or not output_path.strip():
+        return None, _error_response('bad-request', 'A non-empty outputPath is required.')
+
+    return {
+        'type': 'delete-file',
+        'outputPath': output_path,
+    }, None
+
+
 def _validate_get_video_formats_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     if message.get('type') != 'get-video-formats':
         return None, _error_response('bad-request', "Expected request type 'get-video-formats'.")
@@ -395,6 +409,9 @@ def _validate_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, d
     if request_type == 'show-downloaded-clip-in-folder':
         return _validate_show_downloaded_clip_in_folder_request(message)
 
+    if request_type == 'delete-file':
+        return _validate_delete_file_request(message)
+
     if request_type == 'get-video-formats':
         return _validate_get_video_formats_request(message)
 
@@ -404,7 +421,7 @@ def _validate_request(message: dict[str, Any]) -> tuple[dict[str, Any] | None, d
     if request_type == 'pick-file':
         return _validate_pick_file_request(message)
 
-    return None, _error_response('bad-request', "Expected request type 'download-clip', 'download-full-video', 'show-downloaded-clip-in-folder', 'get-video-formats', 'pick-directory', or 'pick-file'.")
+    return None, _error_response('bad-request', "Expected request type 'download-clip', 'download-full-video', 'show-downloaded-clip-in-folder', 'delete-file', 'get-video-formats', 'pick-directory', or 'pick-file'.")
 
 
 def _require_tool(tool_name: str) -> tuple[str | None, dict[str, Any] | None]:
@@ -992,6 +1009,22 @@ def _show_downloaded_clip_in_folder(output_path: str, highlight_file: bool) -> t
         return False, f'Failed to open folder in Explorer: {error}'
 
 
+def _delete_downloaded_file(output_path: str) -> tuple[bool, str | None]:
+    target_path = Path(output_path).expanduser()
+
+    try:
+        if not target_path.exists():
+            return False, f'File does not exist: {target_path}'
+
+        if not target_path.is_file():
+            return False, f'Path is not a file: {target_path}'
+
+        target_path.unlink()
+        return True, None
+    except Exception as error:
+        return False, f'Failed to delete file: {error}'
+
+
 def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == '--self-test':
         return _run_self_test()
@@ -1039,6 +1072,22 @@ def main() -> int:
             'opened': True,
             'outputPath': request['outputPath'],
             'highlighted': request['highlightFile'],
+        })
+        return 0
+
+    if request['type'] == 'delete-file':
+        logger.info(f'Deleting downloaded file: {request["outputPath"]}')
+        deleted, error_message = _delete_downloaded_file(request['outputPath'])
+        if not deleted:
+            logger.error(f'Failed to delete file: {error_message}')
+            _write_native_message(_error_response('delete-file-failed', error_message or 'Failed to delete file.'))
+            return 0
+
+        logger.info('Successfully deleted downloaded file')
+        _write_native_message({
+            'ok': True,
+            'deleted': True,
+            'outputPath': request['outputPath'],
         })
         return 0
 
