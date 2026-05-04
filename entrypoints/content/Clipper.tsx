@@ -66,7 +66,12 @@ function clearTimelinePreviewOverlay() {
 
 function renderTimelinePreviewOverlay(startSeconds: number, endSeconds: number) {
   const videoElement = getActiveVideoElement()
-  const timelineContainer = document.querySelector('.ytp-progress-bar-container') as HTMLElement | null
+  // If on YouTube, use .ytp-progress-bar-container. If on Twitch, use .seekbar-bar
+  const isYouTube = window.location.hostname.includes('youtube.com')
+  const timelineContainer = isYouTube
+    ? document.querySelector('.ytp-progress-bar-container') as HTMLElement | null
+    : document.querySelector('.seekbar-bar') as HTMLElement | null
+
 
   if (!videoElement || !timelineContainer) {
     clearTimelinePreviewOverlay()
@@ -530,14 +535,9 @@ function TimeSelection({
           whiteSpace={'normal'}
           opacity={shouldDisable ? 0.6 : 1}
           _hover={{ backgroundColor: 'rgba(74, 222, 128, 0.3)' }}
+          textAlign={'center'}
         >
-          <Text
-            wordBreak={'break-word'}
-            width={'100%'}
-            height={'fit-content'}
-          >
-            Set Start Time
-          </Text>
+          Set Start Time
         </Button>
         <Button
           onClick={onSetEnd}
@@ -556,14 +556,9 @@ function TimeSelection({
           whiteSpace={'normal'}
           opacity={shouldDisable ? 0.6 : 1}
           _hover={{ backgroundColor: 'rgba(74, 222, 128, 0.3)' }}
+          textAlign={'center'}
         >
-          <Text
-            wordBreak={'break-word'}
-            width={'100%'}
-            height={'fit-content'}
-          >
-            Set End Time
-          </Text>
+          Set End Time
         </Button>
         {showCancel && (
           <Button
@@ -1312,7 +1307,7 @@ export default function Clipper() {
       >
         <Button
           className={'ytp-button ' + (isTwitch ? 'mr-3' : '')}
-          onClick={handleToggle}
+          //onClick={handleToggle}
           display={'flex'}
           alignItems={'center'}
           justifyContent={'center'}
@@ -1336,7 +1331,7 @@ export default function Clipper() {
           boxShadow="xl"
           p={8}
           m={4}
-          minW="200px"
+          minW="250px"
           minH={'100px'}
           fontSize="12px"
           backdropFilter="blur(8px)"

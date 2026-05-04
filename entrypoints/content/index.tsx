@@ -8,7 +8,7 @@ import { getEnableScreenshotButton, watchEnableScreenshotButton } from '@/lib/re
 import { useEffect, useState } from 'react'
 
 function ScreenshotWrapper() {
-    const [enabled, setEnabled] = useState(true)
+  const [enabled, setEnabled] = useState(true)
   useEffect(() => {
     const load = async () => {
       setEnabled(await getEnableScreenshotButton())

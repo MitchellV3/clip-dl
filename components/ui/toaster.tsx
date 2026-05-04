@@ -47,6 +47,8 @@ export const Toaster = () => {
               gap="4"
               flex="1"
               maxWidth="80%" alignItems={"flex-start"}
+              wordBreak={'break-all'}
+              overflow={'hidden'}
             >
               {toast.title &&
                 <Toast.Title
