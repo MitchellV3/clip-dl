@@ -1432,6 +1432,28 @@ export default function Clipper() {
       setIsOpen((previous) => !previous)
     }
     window.clip_forceShowPlayerControls = () => {
+      if (window.location.hostname.includes('twitch.tv')) {
+        const playerContainer = document.querySelector('.video-player__default-player') as HTMLElement | null
+        if (!playerContainer) return
+        playerContainer.classList.remove('video-player__inactive')
+        playerContainer.querySelectorAll('[aria-hidden="true"]').forEach(el => el.setAttribute('aria-hidden', 'false'))
+        const controls = playerContainer.querySelector('.player-controls') as HTMLElement | null
+        if (controls) {
+          controls.dataset.aVisible = 'true'
+          controls.style.opacity = '1'
+          controls.style.pointerEvents = 'auto'
+        }
+        const topBar = playerContainer.querySelector('.top-bar') as HTMLElement | null
+        if (topBar) {
+          const wrapper = topBar.closest('.tw-transition') as HTMLElement | null
+          if (wrapper) {
+            wrapper.setAttribute('aria-hidden', 'false')
+            wrapper.style.opacity = '1'
+            wrapper.style.pointerEvents = 'auto'
+          }
+        }
+        return
+      }
       const player = document.querySelector('.html5-video-player, ytd-watch-flexy') as HTMLElement | null
       if (!player) return
       player.classList.remove('ytp-hide-controls', 'ytp-hide-controls-forced')
@@ -1447,6 +1469,24 @@ export default function Clipper() {
       }
     }
     window.clip_restorePlayerControlsVisibility = () => {
+      if (window.location.hostname.includes('twitch.tv')) {
+        const playerContainer = document.querySelector('.video-player__default-player') as HTMLElement | null
+        if (!playerContainer) return
+        const controls = playerContainer.querySelector('.player-controls') as HTMLElement | null
+        if (controls) {
+          controls.style.opacity = ''
+          controls.style.pointerEvents = ''
+        }
+        const topBar = playerContainer.querySelector('.top-bar') as HTMLElement | null
+        if (topBar) {
+          const wrapper = topBar.closest('.tw-transition') as HTMLElement | null
+          if (wrapper) {
+            wrapper.style.opacity = ''
+            wrapper.style.pointerEvents = ''
+          }
+        }
+        return
+      }
       const player = document.querySelector('.html5-video-player, ytd-watch-flexy') as HTMLElement | null
       if (!player) return
       const controls = player.querySelector('.ytp-controls, .ytp-keyboard-focus-overlay') as HTMLElement | null
