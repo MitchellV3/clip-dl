@@ -1227,6 +1227,8 @@ export default function Clipper() {
         // Ask user for an optional VOD URL to download up to the current point.
         const vodUrl = window.prompt('Optional: enter the Twitch VOD URL to download up to the current point (leave empty to skip VOD download)')
 
+        if (vodUrl === null) return
+
         const request: FullVideoDownloadRequest = {
           type: 'download-full-video',
           url: currentUrl,
