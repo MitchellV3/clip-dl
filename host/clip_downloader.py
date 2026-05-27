@@ -353,6 +353,14 @@ def _validate_download_full_video_request(message: dict[str, Any]) -> tuple[dict
         'downloader': downloader,
     }
 
+    # Optional Twitch/Streamlink-specific fields
+    if isinstance(message.get('streamlink'), bool):
+        validated_request['streamlink'] = bool(message.get('streamlink'))
+
+    twitch_vod = message.get('twitchVodUrl')
+    if isinstance(twitch_vod, str) and twitch_vod.strip():
+        validated_request['twitchVodUrl'] = twitch_vod.strip()
+
     # Preserve optional fields if provided
     format_selector = message.get('formatSelector')
     if isinstance(format_selector, str) and format_selector:
@@ -524,6 +532,64 @@ def _check_ypb_available() -> tuple[bool, str | None]:
         )
 
 
+def _check_streamlink_available() -> tuple[bool, str | None]:
+    """
+    Check if streamlink is available on PATH.
+    Returns (available: bool, error_message: str | None)
+    """
+    tool_path = shutil.which('streamlink')
+    if tool_path:
+        logger.debug(f'streamlink found at {tool_path}')
+        return True, None
+    else:
+        logger.warning('streamlink not found on PATH')
+        return False, (
+            'streamlink is not installed or not on PATH. '
+            'Install Streamlink (https://streamlink.github.io/) and ensure `streamlink --version` works in a new terminal.'
+        )
+
+
+def _start_streamlink_recording(request: dict[str, Any], downloads_path: Path) -> tuple[bool, str | None]:
+    """
+    Start a Streamlink recording for the provided request['url'].
+    This launches streamlink in a detached/visible console so it continues
+    recording independently of the native host's short-lived process.
+
+    Returns (started: bool, message_or_path: str | None)
+    """
+    try:
+        url = request.get('url')
+        if not isinstance(url, str) or not url:
+            return False, 'Invalid URL for Streamlink recording.'
+
+        # Determine output path and filename
+        effective_path = _resolve_effective_path(downloads_path, request)
+        parsed = urlparse(url)
+        channel = parsed.path.strip('/').split('/')[0] or 'twitch'
+        now = int(time.time())
+        date_prefix = time.strftime('(%Y-%m-%d)', time.localtime())
+        filename = f"{date_prefix}_{_sanitize_file_token(channel)}_{now}.ts"
+        output_file = effective_path / filename
+
+        cmd = [
+            'streamlink',
+            url,
+            'best',
+            '-o',
+            str(output_file),
+        ]
+
+        logger.info(f'Starting Streamlink recording: {cmd}')
+
+        # Start in a new console so it persists independently
+        subprocess.Popen(cmd, shell=False, creationflags=subprocess.CREATE_NEW_CONSOLE)
+        logger.info(f'Streamlink recording started: {output_file}')
+        return True, str(output_file)
+    except Exception as e:
+        logger.error(f'Failed to start Streamlink: {e}')
+        return False, str(e)
+
+
 def _sanitize_file_token(value: str) -> str:
     return ''.join(character if character.isalnum() else '-' for character in value).strip('-') or 'clip'
 
@@ -653,6 +719,16 @@ SOURCE_DOMAIN_MAP: dict[str, str] = {
 }
 
 
+def _get_domain_from_url(url: str) -> str:
+    """Extract the domain from a URL (e.g., 'youtube.com' from 'https://www.youtube.com/...')"""
+    try:
+        parsed = urlparse(url)
+        domain = parsed.netloc.lower().removeprefix('www.')
+        return domain
+    except Exception:
+        return ''
+
+
 def _resolve_effective_path(downloads_path: Path, request: dict[str, Any]) -> Path:
     organize_by_date = request.get('organizeByDate', False)
     organize_by_source = request.get('organizeBySource', False)
@@ -759,13 +835,19 @@ def _build_download_command(request: dict[str, Any], downloads_path: Path) -> li
             '--output', _build_temp_output_template(request),
         ])
     else:
+        # Full video download
         command.extend([
             '--live-from-start',
-            '--embed-subs',
-            '--embed-info-json',
-            '--embed-chapters',
             '--output', _build_full_video_output_template(request),
         ])
+        # Only embed metadata/subs for YouTube; Twitch and others may not support these flags
+        domain = _get_domain_from_url(request.get('url', ''))
+        if domain == 'youtube.com':
+            command.extend([
+                '--embed-subs',
+                '--embed-info-json',
+                '--embed-chapters',
+            ])
 
     if audio_only:
         command.extend(['-x', '--audio-format', 'mp3'])
@@ -790,6 +872,8 @@ def _build_ypb_command(request: dict[str, Any], downloads_path: Path) -> list[st
     
     For livestream rewinds, we use: ypb download --interval <duration>s/now URL -- [yt-dlp args]
     where <duration> is pastDurationSeconds (e.g., 30s for 30 seconds of the past).
+    
+    Note: ypb only works with YouTube livestreams. This function will raise if the URL is not a YouTube URL.
     """
     audio_only = request.get('audioOnly', False)
     downloader = request.get('downloader', 'native')
@@ -802,6 +886,11 @@ def _build_ypb_command(request: dict[str, Any], downloads_path: Path) -> list[st
     
     if not url:
         raise ValueError('url is required for ypb downloads')
+    
+    # ypb only supports YouTube livestreams
+    domain = _get_domain_from_url(url)
+    if domain != 'youtube.com':
+        raise ValueError(f'ypb only supports YouTube livestreams. URL domain is: {domain}')
     
     effective_path = _resolve_effective_path(downloads_path, request)
     
@@ -1517,19 +1606,42 @@ def main() -> int:
         downloads_path.mkdir(parents=True, exist_ok=True)
     logger.debug(f'Downloads path: {downloads_path}')
 
-    for tool_name in ('yt-dlp', 'ffmpeg', 'ffprobe'):
+    # Basic required tools for most flows
+    required_tools = ['yt-dlp', 'ffmpeg', 'ffprobe']
+    # If Streamlink recording is requested, ensure streamlink is available
+    if request.get('streamlink', False):
+        required_tools.append('streamlink')
+
+    for tool_name in required_tools:
+        if tool_name == 'streamlink':
+            available, streamlink_error = _check_streamlink_available()
+            if not available:
+                logger.error(f'streamlink not available: {streamlink_error}')
+                _write_native_message(_error_response('missing-tool', streamlink_error or "'streamlink' is not available"))
+                return 0
+            continue
+
         _, missing_tool_error = _require_tool(tool_name)
         if missing_tool_error:
             logger.error(f'Missing tool check failed: {missing_tool_error.get("message")}')
             _write_native_message(missing_tool_error)
             return 0
 
-    # For livestream clips, check if ypb is available
+    # For livestream clips, check if ypb is available (and only for YouTube URLs)
     if request.get('livestream', False) and request['type'] == 'download-clip':
-        ypb_available, ypb_error = _check_ypb_available()
-        if not ypb_available:
-            logger.error(f'ypb not available: {ypb_error}')
-            _write_native_message(_error_response('ypb-missing', ypb_error or 'ypb is not installed.'))
+        url = request.get('url', '')
+        domain = _get_domain_from_url(url)
+        
+        if domain == 'youtube.com':
+            ypb_available, ypb_error = _check_ypb_available()
+            if not ypb_available:
+                logger.error(f'ypb not available: {ypb_error}')
+                _write_native_message(_error_response('ypb-missing', ypb_error or 'ypb is not installed.'))
+                return 0
+        # If not YouTube (e.g., Twitch), livestream mode on clips is not supported for non-YouTube
+        elif domain == 'twitch.tv':
+            logger.error('Livestream mode (clip rewind) is only supported on YouTube livestreams, not Twitch')
+            _write_native_message(_error_response('bad-request', 'Livestream mode is only supported on YouTube livestreams. For Twitch, use Full Video to start a live recording.'))
             return 0
 
     estimated_size = _get_estimated_file_size(request['url'])
@@ -1564,16 +1676,52 @@ def main() -> int:
                 logger.info('Using ypb for livestream rewind download')
                 download_command = _build_ypb_command(request, downloads_path)
             else:
-                logger.info(f'Using standard yt-dlp for {request["type"]}')
-                download_command = _build_download_command(request, downloads_path)
+                # Special-case: if this is a full-video request that requests
+                # a Streamlink recording (Twitch live), start Streamlink and
+                # optionally run yt-dlp for a provided VOD URL.
+                if request.get('streamlink', False) and request['type'] == 'download-full-video':
+                    logger.info('Streamlink requested for live recording; starting Streamlink')
+                    started, info = _start_streamlink_recording(request, downloads_path)
+                    if not started:
+                        logger.error(f'Failed to start Streamlink recording: {info}')
+                        raise RuntimeError(f'Failed to start Streamlink: {info}')
+                    # Persist the streamlink output path for later response
+                    request['_streamlink_output'] = info
+
+                    # If a twitchVodUrl was provided, download it via yt-dlp as a separate output
+                    twitch_vod = request.get('twitchVodUrl')
+                    if isinstance(twitch_vod, str) and twitch_vod:
+                        logger.info(f'Downloading provided Twitch VOD URL via yt-dlp: {twitch_vod}')
+                        vod_request = dict(request)
+                        vod_request['url'] = twitch_vod
+                        # Use standard yt-dlp for the VOD download
+                        download_command = _build_download_command(vod_request, downloads_path)
+                    else:
+                        # No VOD to download; create a no-op download_command and let the process finish
+                        logger.info('No Twitch VOD URL provided; Streamlink recording only (no yt-dlp download will be run)')
+                        download_command = None
+                else:
+                    logger.info(f'Using standard yt-dlp for {request["type"]}')
+                    download_command = _build_download_command(request, downloads_path)
             
             show_live = request.get('showLiveProcessLog', True)
-            if show_live:
-                logger.debug(f'Executing with visible progress window: {download_command!r}')
-                completed_process = _run_command_with_visible_progress(download_command, request)
+            if download_command is None:
+                # Nothing to run (Streamlink-only case). Create a successful CompletedProcess-like object.
+                class _DummyCompleted:
+                    def __init__(self):
+                        self.returncode = 0
+                        self.stdout = ''
+                        self.stderr = ''
+                        self.resolved_final_output_path = None
+
+                completed_process = _DummyCompleted()
             else:
-                logger.debug(f'Executing silently (live process log disabled): {download_command!r}')
-                completed_process = _run_command_silently(request, downloads_path)
+                if show_live:
+                    logger.debug(f'Executing with visible progress window: {download_command!r}')
+                    completed_process = _run_command_with_visible_progress(download_command, request)
+                else:
+                    logger.debug(f'Executing silently (live process log disabled): {download_command!r}')
+                    completed_process = _run_command_silently(request, downloads_path)
     except RuntimeError as error:
         if str(error) == 'busy':
             logger.warning('Another download is already running (busy lock)')
@@ -1639,6 +1787,21 @@ def main() -> int:
             output_path = recovered_path
 
     if output_path is None or not output_path.exists():
+        # Special-case: Streamlink-only recording was started and there is no
+        # immediate yt-dlp output. In that case return success indicating the
+        # recording was started and provide the expected recording file path
+        # if available.
+        streamlink_out = request.get('_streamlink_output')
+        if request.get('streamlink', False) and streamlink_out:
+            logger.info('Streamlink recording started; returning success without a completed file.')
+            _write_native_message({
+                'ok': True,
+                'downloadType': 'full-video',
+                'outputPath': str(streamlink_out),
+                'fileName': Path(streamlink_out).name,
+            })
+            return 0
+
         logger.error('Download finished but the final output file was not found')
         _write_native_message(_error_response('download-failed', 'Download finished but the output file was not found.'))
         return 0

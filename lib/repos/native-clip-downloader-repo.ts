@@ -41,6 +41,13 @@ export interface FullVideoDownloadRequest {
     downloadsPath?: string
     downloader?: string
     cookiesFile?: string
+    // Twitch live recording options
+    // When true, the native host will attempt to start a Streamlink
+    // recording for the provided URL (useful for Twitch live channels).
+    streamlink?: boolean
+    // Optional: when provided on a Twitch live request, the host will
+    // also download the specified VOD URL with yt-dlp (separate output).
+    twitchVodUrl?: string
 }
 
 export type ClipDownloadRequest = ClipRangeDownloadRequest | FullVideoDownloadRequest

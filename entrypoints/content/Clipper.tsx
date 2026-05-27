@@ -471,9 +471,12 @@ function QualitySelector({
 
 function DurationButtons({
   shouldDisable,
+  disableFullVideo,
   onDownload,
 }: {
   shouldDisable: boolean
+  // If true, the Full Video button will be disabled (used for Twitch live when livestream mode is off)
+  disableFullVideo?: boolean
   onDownload: (seconds: number, label: string) => void
 }) {
   function handleClick(e: React.MouseEvent, seconds: number) {
@@ -522,7 +525,7 @@ function DurationButtons({
           <Button
             key={duration.seconds}
             onClick={(event) => handleClick(event, duration.seconds)}
-            disabled={shouldDisable}
+            disabled={shouldDisable || (duration.seconds === -1 && disableFullVideo)}
             backgroundColor={isFullVideo ? 'rgba(255, 255, 255, 0.05)' : 'transparent'}
             color={isFullVideo ? '#ffffff' : '#e2e2e2'}
             border={isFullVideo ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid transparent'}
@@ -857,23 +860,29 @@ export default function Clipper() {
   useEffect(() => {
     const loadLiveStreamModeSetting = async () => {
       const currentUrl = window.location.href
-      const isLivestreamUrl = currentUrl.includes('/live/')
+      // Livestream mode (clip rewind) only works on YouTube livestreams
+      const isYoutubeLivestreamUrl = currentUrl.includes('youtube.com') && currentUrl.includes('/live/')
       
       const enabled = await getLiveStreamMode()
-      const shouldEnable = enabled || isLivestreamUrl
+      const shouldEnable = (enabled || isYoutubeLivestreamUrl) && isYoutubeLivestreamUrl
       
       setLiveStreamModeEnabled(shouldEnable)
-      setIsLivestreamUrlAutoDetected(isLivestreamUrl)
+      setIsLivestreamUrlAutoDetected(isYoutubeLivestreamUrl)
       
-      // If we auto-detected a livestream but it wasn't previously enabled, save it
-      if (isLivestreamUrl && !enabled) {
+      // If we auto-detected a YouTube livestream but it wasn't previously enabled, save it
+      if (isYoutubeLivestreamUrl && !enabled) {
         await setLiveStreamMode(true)
       }
     }
     void loadLiveStreamModeSetting()
 
     const unsubscribe = watchLiveStreamMode((value) => {
-      setLiveStreamModeEnabled(value)
+      const currentUrl = window.location.href
+      const isYoutubeLivestreamUrl = currentUrl.includes('youtube.com') && currentUrl.includes('/live/')
+      // Only allow livestream mode on YouTube livestreams
+      if (isYoutubeLivestreamUrl) {
+        setLiveStreamModeEnabled(value)
+      }
     })
 
     return () => {
@@ -1202,7 +1211,7 @@ export default function Clipper() {
         toaster.create({
           type: 'error',
           title: 'Video not found',
-          description: 'clip-dl could not find the active YouTube video element on this page.',
+          description: 'clip-dl could not find the active video element on this page.',
           duration: 5000,
           closable: true,
         })
@@ -1210,9 +1219,41 @@ export default function Clipper() {
         return
       }
 
+      // Twitch live special flow: when on a Twitch channel URL (not a VOD)
+      const currentUrl = window.location.href
+      const isTwitchChannel = currentUrl.includes('twitch.tv') && !currentUrl.includes('/videos/')
+
+      if (isTwitchChannel && livestreamModeEnabled) {
+        // Ask user for an optional VOD URL to download up to the current point.
+        const vodUrl = window.prompt('Optional: enter the Twitch VOD URL to download up to the current point (leave empty to skip VOD download)')
+
+        const request: FullVideoDownloadRequest = {
+          type: 'download-full-video',
+          url: currentUrl,
+          videoTitle: getPageVideoTitle(),
+          label: 'Full Video',
+          audioOnly: clipState.audioOnly,
+          fileFormat,
+          fileNamingTemplate,
+          organizeByDate: organizeByDateEnabled,
+          organizeBySource: organizeBySourceEnabled,
+          organizeByUploader: organizeByUploaderEnabled,
+          // Signal host to start a Streamlink recording for this live Twitch channel
+          streamlink: true,
+        }
+
+        if (typeof vodUrl === 'string' && vodUrl.trim()) {
+          request.twitchVodUrl = vodUrl.trim()
+        }
+
+        enqueueDownload(request)
+        return
+      }
+
+      // Fallback: default full-video behavior for non-Twitch or when livestream mode is off
       const request: FullVideoDownloadRequest = {
         type: 'download-full-video',
-        url: window.location.href,
+        url: currentUrl,
         videoTitle: getPageVideoTitle(),
         label: 'Full Video',
         audioOnly: clipState.audioOnly,
@@ -1492,7 +1533,14 @@ export default function Clipper() {
                 onSelectionChange={handleFormatSelectionChange}
                 disabled={clipState.audioOnly}
               />
-              <DurationButtons shouldDisable={shouldDisableDownloadButtons} onDownload={handleDurationDownload} />
+              {
+                (() => {
+                  const currentUrl = window.location.href
+                  const isTwitchChannel = currentUrl.includes('twitch.tv') && !currentUrl.includes('/videos/')
+                  const disableFullVideo = isTwitchChannel && !livestreamModeEnabled
+                  return <DurationButtons shouldDisable={shouldDisableDownloadButtons} disableFullVideo={disableFullVideo} onDownload={handleDurationDownload} />
+                })()
+              }
               <TimeSelection
                 status={timeSelection.timeSelectionStatus}
                 shouldDisable={shouldDisableDownloadButtons}

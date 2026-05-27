@@ -45,6 +45,9 @@ Before installing, ensure these tools are installed and available on your `PATH`
     - [**AtomicParsley**](https://github.com/wez/atomicparsley)
 - [**ffmpeg/ffprobe**](https://www.ffmpeg.org/) — (for remuxing clips). Ensure you have the binary from the official site, not the python package.
 
+Optional (for Twitch live recording):
+- [**Streamlink**](https://streamlink.github.io/) — Used to record live Twitch streams. Install and ensure `streamlink` is on your PATH if you want Twitch live recording functionality from the extension.
+
 **Optional (for livestream rewind support):**
 
 - [**ypb**](https://github.com/yt-dlp/ypb) — Enables downloading past segments from YouTube livestreams using `ypb download --interval` syntax. Install from: [https://github.com/yt-dlp/ypb#installation](https://github.com/yt-dlp/ypb#installation). When livestream mode is enabled in the extension and ypb is not available, a helpful error message will direct you to install it.
