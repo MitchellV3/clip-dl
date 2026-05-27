@@ -552,8 +552,10 @@ def _check_streamlink_available() -> tuple[bool, str | None]:
 def _start_streamlink_recording(request: dict[str, Any], downloads_path: Path) -> tuple[bool, str | None]:
     """
     Start a Streamlink recording for the provided request['url'].
-    This launches streamlink in a detached/visible console so it continues
-    recording independently of the native host's short-lived process.
+    This launches a Python helper process in a detached/visible console that
+    runs streamlink and waits for it to finish (i.e. when the live stream ends
+    or the user closes the console). Afterwards the .ts file is automatically
+    remuxed to .mkv and the .ts is deleted.
 
     Returns (started: bool, message_or_path: str | None)
     """
@@ -568,23 +570,56 @@ def _start_streamlink_recording(request: dict[str, Any], downloads_path: Path) -
         channel = parsed.path.strip('/').split('/')[0] or 'twitch'
         now = int(time.time())
         date_prefix = time.strftime('(%Y-%m-%d)', time.localtime())
-        filename = f"{date_prefix}_{_sanitize_file_token(channel)}_{now}.ts"
-        output_file = effective_path / filename
+        filename_ts = f"{date_prefix}_{_sanitize_file_token(channel)}_{now}.ts"
+        output_ts = effective_path / filename_ts
+        output_mkv = output_ts.with_suffix('.mkv')
 
-        cmd = [
-            'streamlink',
-            url,
-            'best',
-            '-o',
-            str(output_file),
-        ]
+        url_repr = repr(url)
+        output_ts_repr = repr(str(output_ts))
+        output_mkv_repr = repr(str(output_mkv))
 
-        logger.info(f'Starting Streamlink recording: {cmd}')
+        helper_code = f'''"""Post-process Streamlink recording: convert .ts to .mkv."""
+import subprocess
+import sys
+from pathlib import Path
 
-        # Start in a new console so it persists independently
-        subprocess.Popen(cmd, shell=False, creationflags=subprocess.CREATE_NEW_CONSOLE)
-        logger.info(f'Streamlink recording started: {output_file}')
-        return True, str(output_file)
+output_ts = Path({output_ts_repr})
+output_mkv = Path({output_mkv_repr})
+url = {url_repr}
+
+streamlink_cmd = ["streamlink", url, "best", "-o", str(output_ts)]
+print("[clip-dl] Starting Streamlink recording...")
+result = subprocess.run(streamlink_cmd)
+if result.returncode != 0:
+    input(f"[clip-dl] Streamlink failed (code {{result.returncode}}). Press Enter to exit.")
+    sys.exit(result.returncode)
+
+print("[clip-dl] Streamlink finished. Converting to MKV...")
+conv_cmd = ["ffmpeg", "-y", "-ss", "0", "-i", str(output_ts), "-map", "0", "-c", "copy", str(output_mkv)]
+conv_result = subprocess.run(conv_cmd)
+if conv_result.returncode != 0:
+    input(f"[clip-dl] FFmpeg conversion failed (code {{conv_result.returncode}}). Press Enter to exit.")
+    sys.exit(conv_result.returncode)
+
+print("[clip-dl] Conversion complete. Cleaning up...")
+output_ts.unlink(missing_ok=True)
+Path(__file__).unlink(missing_ok=True)
+print(f"[clip-dl] Done! Saved to: {{output_mkv.name}}")
+input("Press Enter to exit.")
+'''
+        helper_dir = Path(tempfile.gettempdir())
+        helper_path = helper_dir / f'clip_dl_post_process_{now}.py'
+        helper_path.write_text(helper_code, encoding='utf-8')
+
+        logger.info(f'Starting Streamlink recording with post-process helper: {helper_path}')
+
+        subprocess.Popen(
+            [sys.executable, str(helper_path)],
+            shell=False,
+            creationflags=subprocess.CREATE_NEW_CONSOLE,
+        )
+        logger.info(f'Streamlink recording started (will be converted to MKV): {output_mkv}')
+        return True, str(output_mkv)
     except Exception as e:
         logger.error(f'Failed to start Streamlink: {e}')
         return False, str(e)
